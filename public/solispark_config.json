@@ -149,7 +149,7 @@
       "transportation": 5000
     },
     "tax": {
-      "gst_rate_percent": 13.8,
+      "gst_rate_percent": 8.9,
       "gst_note": "GST applicable on service component"
     },
     "government_subsidy": {

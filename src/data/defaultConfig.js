@@ -146,7 +146,7 @@ export const DEFAULT_CONFIG = {
       transportation: 5000,
     },
     tax: {
-      gst_rate_percent: 13.8,
+      gst_rate_percent: 8.9,
     },
     government_subsidy: {
       residential_up_to_3kw: 14588,
