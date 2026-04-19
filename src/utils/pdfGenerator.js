@@ -264,8 +264,21 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
   const c = q.client;
   const s = q.system;
   const e = q.energy;
-  const panel = config.pricing_defaults.panels[s.panelKey] || {};
+  // Resolve panel: prefer preset, fall back to whatever the user typed on Step 3.
+  const presetPanel = config.pricing_defaults.panels[s.panelKey];
+  const panel = presetPanel || {
+    brand: s.customPanelBrand || '',
+    model: '',
+    wattage: s.panelWattage,
+    warranty_years: 25,
+  };
   const inverter = config.pricing_defaults.inverters[s.inverterKey] || {};
+  // DISCOM name (custom typed > preset). Used wherever BESCOM was hardcoded.
+  const discomName =
+    (computed && computed.discomName) ||
+    e.customProviderName ||
+    config.electricity_providers[e.provider]?.name ||
+    'BESCOM';
   const totalPages = 11;
   const refNum = q.referenceNumber || 'SP-2026-XXXX';
 
@@ -513,7 +526,7 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
       ['Inverter', `${inverter.brand || ''} ${s.inverterCapacityKw} kW`],
       ['Mounting Structure', s.mounting],
       ['Electrical & Wiring', 'AC/DC wiring, ACDB/DCDB, earthing'],
-      ['Net Metering', s.netMetering ? 'Included (BESCOM application filed by Solispark)' : 'Not included'],
+      ['Net Metering', s.netMetering ? `Included (${discomName} application filed by Solispark)` : 'Not included'],
       ['Battery Backup', s.batteryOption === 'None' ? 'Not included' : s.batteryOption],
     ],
     headStyles: { fillColor: NAVY, textColor: WHITE, fontSize: 10, fontStyle: 'bold', halign: 'left' },
@@ -548,17 +561,11 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
   const costs = computed?.costs || {};
   const totals = computed?.totals || {};
 
-  // System price bundles every internal line except BESCOM liaisoning.
-  const systemPrice =
-    (costs.panelsCost || 0) +
-    (costs.inverter || 0) +
-    (costs.mounting || 0) +
-    (costs.electrical || 0) +
-    (costs.labor || 0) +
-    (costs.transport || 0) +
-    (costs.battery || 0);
-  const bescomFee = costs.netMetering || 0;
-  const basicPrice = systemPrice + bescomFee;
+  // Resolved system price + DISCOM charges come straight from the computed
+  // helper — they honour any manual overrides entered on Step 4.
+  const systemPrice = computed?.systemPrice ?? 0;
+  const discomFee = computed?.discomCharges ?? 0;
+  const basicPrice = systemPrice + discomFee;
 
   const panelLabel = panel.brand
     ? `For ${String(panel.brand).toUpperCase()} ${panel.wattage || s.panelWattage}Wp ${panel.model ? panel.model : ''} for ${s.systemSizeKw} kW`
@@ -578,10 +585,10 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
       ],
       [
         '2',
-        'Liasoning with BESCOM for implementation of Systems (Registration, PPA, Bidirectional Meter & Synchronization and Enhancement of sanctioned load along with approval of PPA for solar load.',
-        formatNumber(bescomFee),
+        `Liasoning with ${discomName} for implementation of Systems (Registration, PPA, Bidirectional Meter & Synchronization and Enhancement of sanctioned load along with approval of PPA for solar load.`,
+        formatNumber(discomFee),
         '1',
-        formatNumber(bescomFee),
+        formatNumber(discomFee),
       ],
       [
         {
@@ -749,7 +756,7 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
     'Installation, testing and commissioning of the PV system',
     'Walkways (where applicable for serviceability)',
     'AC cable is considered maximum 25 meters; any additional length required will be charged extra at actuals',
-    'BESCOM liaisoning — registration, PPA, bi-directional meter & synchronization',
+    `${discomName} liaisoning — registration, PPA, bi-directional meter & synchronization`,
     'System earthing, lightning arrester and SPD installation',
   ];
   ourResp.forEach((t) => { y = bullet(doc, t, y); });

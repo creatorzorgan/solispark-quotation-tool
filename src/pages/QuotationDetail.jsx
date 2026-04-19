@@ -39,9 +39,34 @@ const QuotationDetail = () => {
       transportFlat: q.pricing.transportFlat,
       batteryCost: q.system.batteryCost,
     });
+
+    // Mirror the wizard's simplified 2-field pricing model so re-downloads from
+    // this page produce identical output to the first-time download.
+    const autoSystemPrice =
+      (costs.panelsCost || 0) + (costs.inverter || 0) + (costs.mounting || 0) +
+      (costs.electrical || 0) + (costs.labor || 0) + (costs.transport || 0) +
+      (costs.battery || 0);
+    const systemPrice = q.pricing?.systemCostOverride != null
+      ? Math.max(0, q.pricing.systemCostOverride)
+      : autoSystemPrice;
+
+    const autoDiscomCharges = q.system.netMetering ? (q.pricing.netMeteringFlat || 0) : 0;
+    const discomCharges = q.pricing?.discomChargesOverride != null
+      ? Math.max(0, q.pricing.discomChargesOverride)
+      : autoDiscomCharges;
+
+    const providerPreset = config.electricity_providers[q.energy.provider];
+    const discomName = q.energy.customProviderName || providerPreset?.name || 'DISCOM';
+
+    const resolvedCosts = {
+      ...costs,
+      netMetering: discomCharges,
+      subtotal: systemPrice + discomCharges,
+    };
+
     const autoSubsidy = calculateSubsidy(q.system.systemSizeKw, q.client.category, config.pricing_defaults.government_subsidy);
     const subsidy = q.pricing?.subsidyOverride != null ? Math.max(0, q.pricing.subsidyOverride) : autoSubsidy;
-    const totals = calculateTotals(costs, subsidy, config.pricing_defaults.tax.gst_rate_percent);
+    const totals = calculateTotals(resolvedCosts, subsidy, config.pricing_defaults.tax.gst_rate_percent);
     const schedule = paymentSchedule(totals.grandTotal, config.payment_terms);
     const roi = calculateROI({
       systemSizeKw: q.system.systemSizeKw,
@@ -54,7 +79,17 @@ const QuotationDetail = () => {
       degradationPercent: config.calculation_constants.system_degradation_per_year_percent,
       co2PerKwh: config.calculation_constants.co2_offset_kg_per_kwh,
     });
-    return { costs, subsidy, totals, schedule, roi };
+    return {
+      costs: resolvedCosts,
+      autoSystemPrice,
+      systemPrice,
+      discomCharges,
+      discomName,
+      subsidy,
+      totals,
+      schedule,
+      roi,
+    };
   }, [q, config]);
 
   if (!q) {
@@ -71,7 +106,17 @@ const QuotationDetail = () => {
   const c = q.client;
   const s = q.system;
   const e = q.energy;
-  const panel = config.pricing_defaults.panels[s.panelKey];
+  const presetPanel = config.pricing_defaults.panels[s.panelKey];
+  // Custom brand falls back to a preset-shaped object so downstream UI and the
+  // EquipmentSelector (datasheet picker) don't break when there's no preset.
+  const panel = presetPanel || {
+    brand: s.customPanelBrand || 'Custom',
+    model: '',
+    wattage: s.panelWattage,
+    warranty_years: 25,
+  };
+  const providerName =
+    e.customProviderName || config.electricity_providers[e.provider]?.name || e.provider;
 
   const handleDownload = async () => {
     await generatePdf({ quotation: q, computed, config });
@@ -192,7 +237,7 @@ const QuotationDetail = () => {
         <div className="card p-6">
           <h3 className="font-heading font-semibold text-navy-dark mb-4">Energy Assessment</h3>
           <Row label="Monthly Bill" value={formatINR(e.monthlyBill)} />
-          <Row label="Provider" value={config.electricity_providers[e.provider]?.name || e.provider} />
+          <Row label="Provider" value={providerName} />
           <Row label="Per-Unit Rate" value={`₹${e.perUnitRate}`} />
           <Row label="Daily Consumption" value={`${e.dailyConsumptionKwh} kWh`} />
           <Row label="Roof Area" value={`${e.roofAreaSqft} sq.ft`} />
@@ -223,13 +268,8 @@ const QuotationDetail = () => {
           <div className="card p-6 bg-navy-dark text-white">
             <h3 className="font-heading font-semibold text-gold-light mb-4">Investment Summary</h3>
             <div className="text-sm space-y-2">
-              <div className="flex justify-between"><span className="opacity-70">Panels</span><span>{formatINR(computed.costs.panelsCost)}</span></div>
-              <div className="flex justify-between"><span className="opacity-70">Inverter</span><span>{formatINR(computed.costs.inverter)}</span></div>
-              <div className="flex justify-between"><span className="opacity-70">Mounting</span><span>{formatINR(computed.costs.mounting)}</span></div>
-              <div className="flex justify-between"><span className="opacity-70">Electrical</span><span>{formatINR(computed.costs.electrical)}</span></div>
-              <div className="flex justify-between"><span className="opacity-70">Net Metering</span><span>{formatINR(computed.costs.netMetering)}</span></div>
-              <div className="flex justify-between"><span className="opacity-70">Labor</span><span>{formatINR(computed.costs.labor)}</span></div>
-              <div className="flex justify-between"><span className="opacity-70">Transport</span><span>{formatINR(computed.costs.transport)}</span></div>
+              <div className="flex justify-between"><span className="opacity-70">System Cost (pre-GST)</span><span>{formatINR(computed.systemPrice)}</span></div>
+              <div className="flex justify-between"><span className="opacity-70">{computed.discomName} Charges</span><span>{formatINR(computed.discomCharges)}</span></div>
               <div className="flex justify-between border-t border-white/10 pt-2 mt-2 font-bold"><span>Subtotal</span><span>{formatINR(computed.totals.subtotal)}</span></div>
               {computed.subsidy > 0 && <div className="flex justify-between text-gold-light"><span>Subsidy</span><span>−{formatINR(computed.subsidy)}</span></div>}
               <div className="flex justify-between"><span className="opacity-70">GST</span><span>{formatINR(computed.totals.gst)}</span></div>

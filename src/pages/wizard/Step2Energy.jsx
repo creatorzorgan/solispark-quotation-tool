@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Field } from '../../components/ui.jsx';
+import { Combobox, Field } from '../../components/ui.jsx';
 import { ROOF_TYPES, SHADING_OPTIONS } from '../../data/defaultConfig.js';
 import { estimateDailyConsumptionKwh } from '../../utils/calculations.js';
 import { formatINR } from '../../utils/format.js';
@@ -7,6 +7,28 @@ import { formatINR } from '../../utils/format.js';
 const Step2Energy = ({ draft, updateEnergy, config }) => {
   const e = draft.energy;
   const providers = config.electricity_providers;
+
+  // Current display name in the combobox — custom typing wins.
+  const providerDisplay = e.customProviderName || providers[e.provider]?.name || '';
+
+  const handleProviderChange = (typed) => {
+    // If the typed string matches a preset name exactly, snap to that preset
+    // (clears any custom name and pulls in the default rate).
+    const matched = Object.values(providers).find((p) => p.name === typed);
+    if (matched) {
+      updateEnergy({
+        provider: matched.key,
+        customProviderName: null,
+        perUnitRate: matched.rate,
+      });
+    } else {
+      // Custom DISCOM name. Keep rate as-is (the user can edit it separately).
+      updateEnergy({
+        provider: 'other',
+        customProviderName: typed,
+      });
+    }
+  };
 
   // Keep daily kWh in sync when bill or rate changes (user can still edit it)
   useEffect(() => {
@@ -53,24 +75,14 @@ const Step2Energy = ({ draft, updateEnergy, config }) => {
           />
         </Field>
 
-        <Field label="Electricity Provider">
-          <select
-            className="input"
-            value={e.provider}
-            onChange={(ev) => {
-              const key = ev.target.value;
-              updateEnergy({
-                provider: key,
-                perUnitRate: providers[key]?.rate ?? e.perUnitRate,
-              });
-            }}
-          >
-            {Object.values(providers).map((p) => (
-              <option key={p.key} value={p.key}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+        <Field label="Electricity Provider / DISCOM" hint="Choose a preset or type a custom name (e.g. TNEB, APSPDCL).">
+          <Combobox
+            id="discom-combobox"
+            value={providerDisplay}
+            onChange={handleProviderChange}
+            options={Object.values(providers).map((p) => ({ value: p.name }))}
+            placeholder="Type or pick a DISCOM"
+          />
         </Field>
 
         <Field label="Current Per-Unit Rate (₹)" hint="Auto-filled from provider, editable.">

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Field } from '../../components/ui.jsx';
+import { Combobox, Field } from '../../components/ui.jsx';
 import { MOUNTING_OPTIONS, BATTERY_OPTIONS } from '../../data/defaultConfig.js';
 import { panelCountFor, fitsOnRoof } from '../../utils/calculations.js';
 import { formatKw, formatNumber } from '../../utils/format.js';
@@ -7,11 +7,24 @@ import { Zap, AlertTriangle, Sparkles } from 'lucide-react';
 
 const BATTERY_COSTS = { None: 0, 'Deye 5.3kWh': 280000, 'PowerOne 5.3kWh': 260000, Custom: 0 };
 
+// Label for each panel preset in the combobox dropdown. Matching back to a
+// preset on change uses strict equality against this string.
+const panelLabel = (p) => `${p.label} — ${p.brand}`;
+
 const Step3System = ({ draft, updateSystem, updatePricing, config, suggestSystem }) => {
   const s = draft.system;
   const panels = config.pricing_defaults.panels;
   const inverters = config.pricing_defaults.inverters;
   const roofFits = fitsOnRoof(s.systemSizeKw, draft.energy.roofAreaSqft, config.calculation_constants.sqft_per_kw_rooftop);
+
+  // Display value for the panel-brand combobox. Custom-typed names win; if a
+  // preset is selected we render its canonical "Label — Brand" string.
+  const panelDisplay =
+    s.customPanelBrand != null && s.customPanelBrand !== ''
+      ? s.customPanelBrand
+      : panels[s.panelKey]
+      ? panelLabel(panels[s.panelKey])
+      : '';
 
   const setSystemSize = (val) => {
     const size = Number(val) || 0;
@@ -21,14 +34,24 @@ const Step3System = ({ draft, updateSystem, updatePricing, config, suggestSystem
     });
   };
 
-  const setPanelKey = (key) => {
-    const p = panels[key];
-    updateSystem({
-      panelKey: key,
-      panelWattage: p.wattage,
-      panelCount: panelCountFor(s.systemSizeKw, p.wattage),
-    });
-    updatePricing({ pricePerPanel: p.price_per_panel });
+  const handlePanelChange = (typed) => {
+    // Snap to preset if the typed string matches a preset "Label — Brand".
+    const matched = Object.values(panels).find((p) => panelLabel(p) === typed);
+    if (matched) {
+      updateSystem({
+        panelKey: matched.key,
+        customPanelBrand: null,
+        panelWattage: matched.wattage,
+        panelCount: panelCountFor(s.systemSizeKw, matched.wattage),
+      });
+      updatePricing({ pricePerPanel: matched.price_per_panel });
+    } else {
+      // Custom brand typed — preserve the current wattage; user can edit it.
+      updateSystem({
+        panelKey: null,
+        customPanelBrand: typed,
+      });
+    }
   };
 
   const setInverterKey = (key) => {
@@ -89,14 +112,21 @@ const Step3System = ({ draft, updateSystem, updatePricing, config, suggestSystem
           />
         </Field>
 
-        <Field label="Panel Brand">
-          <select className="input" value={s.panelKey} onChange={(e) => setPanelKey(e.target.value)}>
-            {Object.values(panels).map((p) => (
-              <option key={p.key} value={p.key}>
-                {p.label} — {p.brand}
-              </option>
-            ))}
-          </select>
+        <Field
+          label="Panel Brand"
+          hint={
+            s.panelKey
+              ? 'Preset selected — wattage & price auto-filled. Type anything else for a custom brand.'
+              : 'Custom brand. Wattage/price below are kept as-is; edit if needed.'
+          }
+        >
+          <Combobox
+            id="panel-combobox"
+            value={panelDisplay}
+            onChange={handlePanelChange}
+            options={Object.values(panels).map((p) => ({ value: panelLabel(p) }))}
+            placeholder="Type or pick a panel (e.g. Panasonic 540W)"
+          />
         </Field>
 
         <Field label="Panel Wattage (W)">
@@ -169,7 +199,7 @@ const Step3System = ({ draft, updateSystem, updatePricing, config, suggestSystem
             System Summary
           </div>
           <div className="font-heading text-xl font-bold">
-            {formatKw(s.systemSizeKw)} · {s.panelCount}× {panels[s.panelKey]?.brand} panels · {s.inverterCapacityKw} kW inverter
+            {formatKw(s.systemSizeKw)} · {s.panelCount}× {panels[s.panelKey]?.brand || s.customPanelBrand || 'Custom'} panels · {s.inverterCapacityKw} kW inverter
           </div>
         </div>
       </div>

@@ -276,7 +276,7 @@ function energyAssessment({ e, s, config }) {
   ];
 }
 
-function systemSpecs({ s, panel, inverter, computed }) {
+function systemSpecs({ s, panel, inverter, computed, discomName }) {
   const head = new TableRow({
     children: [headerCell('Components', 40), headerCell('Make', 60)],
   });
@@ -285,7 +285,7 @@ function systemSpecs({ s, panel, inverter, computed }) {
     ['Inverter', `${inverter.brand || ''} ${s.inverterCapacityKw} kW`],
     ['Mounting Structure', s.mounting],
     ['Electrical & Wiring', 'AC/DC wiring, ACDB/DCDB, earthing'],
-    ['Net Metering', s.netMetering ? 'Included (BESCOM application filed by Solispark)' : 'Not included'],
+    ['Net Metering', s.netMetering ? `Included (${discomName} application filed by Solispark)` : 'Not included'],
     ['Battery Backup', s.batteryOption === 'None' ? 'Not included' : s.batteryOption],
   ].map(([k, v], i) => new TableRow({
     children: [
@@ -309,19 +309,12 @@ function systemSpecs({ s, panel, inverter, computed }) {
   ];
 }
 
-function commercialOffer({ s, panel, computed, config }) {
-  const costs = computed?.costs || {};
+function commercialOffer({ s, panel, computed, config, discomName }) {
   const totals = computed?.totals || {};
-  const systemPrice =
-    (costs.panelsCost || 0) +
-    (costs.inverter || 0) +
-    (costs.mounting || 0) +
-    (costs.electrical || 0) +
-    (costs.labor || 0) +
-    (costs.transport || 0) +
-    (costs.battery || 0);
-  const bescomFee = costs.netMetering || 0;
-  const basicPrice = systemPrice + bescomFee;
+  // Resolved values from the computed helper — honour any manual overrides.
+  const systemPrice = computed?.systemPrice ?? 0;
+  const discomFee = computed?.discomCharges ?? 0;
+  const basicPrice = systemPrice + discomFee;
 
   const head = new TableRow({
     children: [
@@ -346,10 +339,10 @@ function commercialOffer({ s, panel, computed, config }) {
     new TableRow({
       children: [
         cell('2', { alignment: AlignmentType.CENTER }),
-        cell('Liasoning with BESCOM for implementation of Systems (Registration, PPA, Bidirectional Meter & Synchronization and Enhancement of sanctioned load along with approval of PPA for solar load).'),
-        cell(formatNumber(bescomFee), { alignment: AlignmentType.RIGHT }),
+        cell(`Liasoning with ${discomName} for implementation of Systems (Registration, PPA, Bidirectional Meter & Synchronization and Enhancement of sanctioned load along with approval of PPA for solar load).`),
+        cell(formatNumber(discomFee), { alignment: AlignmentType.RIGHT }),
         cell('1', { alignment: AlignmentType.CENTER }),
-        cell(formatNumber(bescomFee), { alignment: AlignmentType.RIGHT, bold: true }),
+        cell(formatNumber(discomFee), { alignment: AlignmentType.RIGHT, bold: true }),
       ],
     }),
     new TableRow({
@@ -448,14 +441,14 @@ function whySolispark() {
   return out;
 }
 
-function scopeOfWork({ s, c, co }) {
+function scopeOfWork({ s, c, co, discomName }) {
   const ourResp = [
     'Supply, packing and forwarding of all system components',
     'Transportation & unloading at site',
     'Installation, testing and commissioning of the PV system',
     'Walkways (where applicable for serviceability)',
     'AC cable is considered maximum 25 meters; any additional length required will be charged extra at actuals',
-    'BESCOM liaisoning — registration, PPA, bi-directional meter & synchronization',
+    `${discomName} liaisoning — registration, PPA, bi-directional meter & synchronization`,
     'System earthing, lightning arrester and SPD installation',
   ];
   const custResp = [
@@ -567,8 +560,19 @@ export const generateDocx = async ({ quotation: q, computed, config }) => {
   const c = q.client;
   const s = q.system;
   const e = q.energy;
-  const panel = config.pricing_defaults.panels[s.panelKey] || {};
+  // Resolve panel: preset wins, fall back to custom-typed brand from Step 3.
+  const presetPanel = config.pricing_defaults.panels[s.panelKey];
+  const panel = presetPanel || {
+    brand: s.customPanelBrand || '',
+    model: '',
+    wattage: s.panelWattage,
+  };
   const inverter = config.pricing_defaults.inverters[s.inverterKey] || {};
+  const discomName =
+    (computed && computed.discomName) ||
+    e.customProviderName ||
+    config.electricity_providers[e.provider]?.name ||
+    'BESCOM';
   const refNum = q.referenceNumber || 'SP-2026-XXXX';
   const dateStr = formatDate(q.createdAt || new Date().toISOString());
 
@@ -598,11 +602,11 @@ export const generateDocx = async ({ quotation: q, computed, config }) => {
           ...coverLetter({ c, s, e, panel, inverter, refNum, dateStr }),
           ...aboutSolispark({ co }),
           ...energyAssessment({ e, s, config }),
-          ...systemSpecs({ s, panel, inverter, computed }),
-          ...commercialOffer({ s, panel, computed, config }),
+          ...systemSpecs({ s, panel, inverter, computed, discomName }),
+          ...commercialOffer({ s, panel, computed, config, discomName }),
           ...roiSection({ computed }),
           ...whySolispark(),
-          ...scopeOfWork({ s, c, co }),
+          ...scopeOfWork({ s, c, co, discomName }),
           ...termsOfOffer({ config }),
           ...nextSteps({ co }),
         ],

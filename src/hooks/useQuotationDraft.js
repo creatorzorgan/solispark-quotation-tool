@@ -32,6 +32,10 @@ export const createEmptyQuotation = (config) => ({
     monthlyBill: 10000,
     dailyConsumptionKwh: estimateDailyConsumptionKwh(10000, config.electricity_providers.bescom.rate),
     provider: 'bescom',
+    // Free-text DISCOM / utility name entered via combobox. When null, we show
+    // the name from `config.electricity_providers[provider]`. When set, this
+    // wins everywhere the DISCOM is named (UI, PDF, Word).
+    customProviderName: null,
     perUnitRate: config.electricity_providers.bescom.rate,
     roofAreaSqft: 600,
     roofType: 'RCC Flat Roof',
@@ -42,6 +46,10 @@ export const createEmptyQuotation = (config) => ({
     systemSizeKw: 0,
     panelCount: 0,
     panelKey: 'axitec_545w',
+    // Free-text panel name entered via combobox. When `panelKey` is null this
+    // is the brand we print on the proposal; the user-entered `panelWattage`
+    // is used verbatim for the per-panel wattage.
+    customPanelBrand: null,
     panelWattage: config.pricing_defaults.panels.axitec_545w.wattage,
     inverterKey: 'solis_5kw',
     inverterCapacityKw: 5,
@@ -61,6 +69,11 @@ export const createEmptyQuotation = (config) => ({
     // Manual subsidy override — null ⇒ use the calculated value. Set any number
     // (including 0) to override the PM Surya Ghar slab calc for this quote.
     subsidyOverride: null,
+    // The Pricing step now collapses the cost breakdown into just two user-
+    // editable fields. When either override is null the auto-calculated value
+    // (from panels/inverter/mounting/etc. or from netMeteringFlat) is used.
+    systemCostOverride: null,
+    discomChargesOverride: null,
     costs: null,
     subsidy: 0,
     afterSubsidy: 0,
@@ -122,27 +135,65 @@ export const useQuotationDraft = (config, initial) => {
       transportFlat: pricing.transportFlat,
       batteryCost: system.batteryCost,
     });
+
+    // "System Price" bundles everything except the DISCOM liaisoning fee.
+    // If the user has overridden it in Step 4, that wins.
+    const autoSystemPrice =
+      (costs.panelsCost || 0) + (costs.inverter || 0) + (costs.mounting || 0) +
+      (costs.electrical || 0) + (costs.labor || 0) + (costs.transport || 0) +
+      (costs.battery || 0);
+    const systemPrice = pricing.systemCostOverride != null
+      ? Math.max(0, pricing.systemCostOverride)
+      : autoSystemPrice;
+
+    // DISCOM charges — auto-derived from the liaisoning fee; override wins.
+    const autoDiscomCharges = system.netMetering ? (pricing.netMeteringFlat || 0) : 0;
+    const discomCharges = pricing.discomChargesOverride != null
+      ? Math.max(0, pricing.discomChargesOverride)
+      : autoDiscomCharges;
+
+    // Resolved DISCOM display name — custom typing wins over the preset.
+    const providerPreset = config.electricity_providers[energy.provider];
+    const discomName = energy.customProviderName || providerPreset?.name || 'DISCOM';
+
+    // Override the subtotal so all downstream totals reflect the simplified
+    // 2-field pricing model without breaking the costs breakdown shape.
+    const resolvedCosts = {
+      ...costs,
+      netMetering: discomCharges,
+      subtotal: systemPrice + discomCharges,
+    };
+
     const autoSubsidy = calculateSubsidy(
       system.systemSizeKw,
       client.category,
       config.pricing_defaults.government_subsidy
     );
-    // Manual override takes precedence when the user has set one.
     const subsidy = pricing.subsidyOverride != null ? Math.max(0, pricing.subsidyOverride) : autoSubsidy;
-    const totals = calculateTotals(costs, subsidy, config.pricing_defaults.tax.gst_rate_percent);
+    const totals = calculateTotals(resolvedCosts, subsidy, config.pricing_defaults.tax.gst_rate_percent);
     const schedule = paymentSchedule(totals.grandTotal, config.payment_terms);
     const roi = calculateROI({
       systemSizeKw: system.systemSizeKw,
       perUnitRate: energy.perUnitRate,
       netCost: totals.afterSubsidy + totals.gst,
-      paybackBasis: totals.afterSubsidy, // payback calc uses base price ex-GST
+      paybackBasis: totals.afterSubsidy,
       years: 25,
       peakSunHours: config.calculation_constants.peak_sun_hours,
       annualEscalationPercent: config.calculation_constants.annual_tariff_escalation_percent,
       degradationPercent: config.calculation_constants.system_degradation_per_year_percent,
       co2PerKwh: config.calculation_constants.co2_offset_kg_per_kwh,
     });
-    return { costs, subsidy, totals, schedule, roi };
+    return {
+      costs: resolvedCosts,
+      autoSystemPrice,
+      systemPrice,
+      discomCharges,
+      discomName,
+      subsidy,
+      totals,
+      schedule,
+      roi,
+    };
   }, [draft, config]);
 
   // Commit computed pricing into the draft (called before save)

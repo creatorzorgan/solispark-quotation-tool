@@ -3,6 +3,12 @@ import { Field } from '../../components/ui.jsx';
 import { formatINR } from '../../utils/format.js';
 import { RotateCcw } from 'lucide-react';
 
+// Pricing step — simplified to two editable fields:
+//   • System Cost (pre-GST)            — auto-calculated from panels + inverter
+//     + mounting + electrical + labor + transport + battery; user can override.
+//   • {DISCOM} Charges                  — auto-filled from the liaisoning fee;
+//     user can override. Label uses the DISCOM picked on Step 2.
+// Subsidy, GST, and grand total are computed live from these two inputs.
 const Step4Pricing = ({ draft, updatePricing, computed, config }) => {
   const p = draft.pricing;
   const s = draft.system;
@@ -15,130 +21,138 @@ const Step4Pricing = ({ draft, updatePricing, computed, config }) => {
     );
   }
 
-  const { costs, subsidy, totals } = computed;
-
-  // "System price" in the commercial offer bundles every internal cost except
-  // the BESCOM liaisoning fee (which shows as its own line).
-  const systemPrice =
-    (costs.panelsCost || 0) +
-    (costs.inverter || 0) +
-    (costs.mounting || 0) +
-    (costs.electrical || 0) +
-    (costs.labor || 0) +
-    (costs.transport || 0) +
-    (costs.battery || 0);
-  const bescomFee = costs.netMetering || 0;
-
+  const { subsidy, totals, systemPrice, discomCharges, discomName, autoSystemPrice } = computed;
   const gstPercent = config.pricing_defaults.tax.gst_rate_percent;
 
-  // Subsidy input shows the override if set, else the calculated amount.
+  // Two editable fields — shown from the override if set, else the calc.
+  const systemCostShown = p.systemCostOverride != null ? p.systemCostOverride : systemPrice;
+  const discomShown = p.discomChargesOverride != null ? p.discomChargesOverride : discomCharges;
+  const systemIsOverride = p.systemCostOverride != null;
+  const discomIsOverride = p.discomChargesOverride != null;
+
+  // Subsidy: user can override just like before.
   const subsidyShown = p.subsidyOverride != null ? p.subsidyOverride : subsidy;
   const subsidyIsOverride = p.subsidyOverride != null;
+
+  const autoDiscom = draft.system.netMetering ? (p.netMeteringFlat || 0) : 0;
 
   return (
     <div>
       <h2 className="font-heading text-2xl font-bold text-navy-dark mb-1">Pricing & Payment</h2>
       <p className="text-cream-600 mb-8">
-        Edit any per-unit rate to customise this quote. Totals update live.
+        Two numbers drive the whole proposal. Auto-calculated by default — edit either to override.
       </p>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         {/* Editable inputs */}
-        <div className="lg:col-span-3">
-          <h3 className="font-heading text-base font-semibold text-navy-dark mb-4">Unit Rates</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Field label={`Per Panel Cost (${s.panelCount} panels)`}>
-              <input
-                type="number"
-                className="input"
-                value={p.pricePerPanel}
-                onChange={(e) => updatePricing({ pricePerPanel: Number(e.target.value) })}
-              />
-            </Field>
-            <Field label="Inverter Total">
-              <input
-                type="number"
-                className="input"
-                value={p.inverterPrice}
-                onChange={(e) => updatePricing({ inverterPrice: Number(e.target.value) })}
-              />
-            </Field>
-            <Field label="Mounting Structure (₹/kW)">
-              <input
-                type="number"
-                className="input"
-                value={p.mountingPerKw}
-                onChange={(e) => updatePricing({ mountingPerKw: Number(e.target.value) })}
-              />
-            </Field>
-            <Field label="Electrical & Wiring (₹/kW)">
-              <input
-                type="number"
-                className="input"
-                value={p.electricalPerKw}
-                onChange={(e) => updatePricing({ electricalPerKw: Number(e.target.value) })}
-              />
-            </Field>
-            <Field label="BESCOM Liaisoning Fee">
-              <input
-                type="number"
-                className="input"
-                value={p.netMeteringFlat}
-                onChange={(e) => updatePricing({ netMeteringFlat: Number(e.target.value) })}
-              />
-            </Field>
-            <Field label="Installation Labor (₹/kW)">
-              <input
-                type="number"
-                className="input"
-                value={p.installationLaborPerKw}
-                onChange={(e) => updatePricing({ installationLaborPerKw: Number(e.target.value) })}
-              />
-            </Field>
-            <Field label="Transportation & Logistics">
-              <input
-                type="number"
-                className="input"
-                value={p.transportFlat}
-                onChange={(e) => updatePricing({ transportFlat: Number(e.target.value) })}
-              />
-            </Field>
-            <Field
-              label={
-                <span className="flex items-center justify-between gap-2">
-                  <span>
-                    Government Subsidy{' '}
-                    <span className={subsidyIsOverride ? 'text-gold-dark' : 'text-cream-500'}>
-                      ({subsidyIsOverride ? 'manual' : 'auto'})
-                    </span>
+        <div className="lg:col-span-3 space-y-5">
+          <Field
+            label={
+              <span className="flex items-center justify-between gap-2">
+                <span>
+                  System Cost (pre-GST){' '}
+                  <span className={systemIsOverride ? 'text-gold-dark' : 'text-cream-500'}>
+                    ({systemIsOverride ? 'manual' : 'auto'})
                   </span>
-                  {subsidyIsOverride && (
-                    <button
-                      type="button"
-                      onClick={() => updatePricing({ subsidyOverride: null })}
-                      className="text-xs text-navy-mid hover:text-gold-dark flex items-center gap-1"
-                      title="Reset to auto-calculated"
-                    >
-                      <RotateCcw className="w-3 h-3" /> reset
-                    </button>
-                  )}
                 </span>
-              }
-              hint={
-                subsidyIsOverride
-                  ? 'Manual override. Will show on the PDF.'
-                  : 'Auto-calculated from PM Surya Ghar slabs (≤5 kW residential). Edit to override.'
-              }
-            >
-              <input
-                type="number"
-                min="0"
-                className="input"
-                value={subsidyShown}
-                onChange={(e) => updatePricing({ subsidyOverride: Number(e.target.value) })}
-              />
-            </Field>
-          </div>
+                {systemIsOverride && (
+                  <button
+                    type="button"
+                    onClick={() => updatePricing({ systemCostOverride: null })}
+                    className="text-xs text-navy-mid hover:text-gold-dark flex items-center gap-1"
+                    title="Reset to auto-calculated"
+                  >
+                    <RotateCcw className="w-3 h-3" /> reset
+                  </button>
+                )}
+              </span>
+            }
+            hint={
+              systemIsOverride
+                ? `Manual override. Auto-calc would be ${formatINR(autoSystemPrice)}.`
+                : `Panels + inverter + mounting + electrical + labor + transport + battery. Edit to override.`
+            }
+          >
+            <input
+              type="number"
+              min="0"
+              className="input"
+              value={systemCostShown}
+              onChange={(e) => updatePricing({ systemCostOverride: Number(e.target.value) })}
+            />
+          </Field>
+
+          <Field
+            label={
+              <span className="flex items-center justify-between gap-2">
+                <span>
+                  {discomName} Charges{' '}
+                  <span className={discomIsOverride ? 'text-gold-dark' : 'text-cream-500'}>
+                    ({discomIsOverride ? 'manual' : 'auto'})
+                  </span>
+                </span>
+                {discomIsOverride && (
+                  <button
+                    type="button"
+                    onClick={() => updatePricing({ discomChargesOverride: null })}
+                    className="text-xs text-navy-mid hover:text-gold-dark flex items-center gap-1"
+                    title="Reset to auto-calculated"
+                  >
+                    <RotateCcw className="w-3 h-3" /> reset
+                  </button>
+                )}
+              </span>
+            }
+            hint={
+              discomIsOverride
+                ? `Manual override. Auto-calc would be ${formatINR(autoDiscom)}.`
+                : `Liasoning with ${discomName} (Registration, PPA, Bi-directional Meter & Synchronization). Edit to override.`
+            }
+          >
+            <input
+              type="number"
+              min="0"
+              className="input"
+              value={discomShown}
+              onChange={(e) => updatePricing({ discomChargesOverride: Number(e.target.value) })}
+            />
+          </Field>
+
+          <Field
+            label={
+              <span className="flex items-center justify-between gap-2">
+                <span>
+                  Government Subsidy{' '}
+                  <span className={subsidyIsOverride ? 'text-gold-dark' : 'text-cream-500'}>
+                    ({subsidyIsOverride ? 'manual' : 'auto'})
+                  </span>
+                </span>
+                {subsidyIsOverride && (
+                  <button
+                    type="button"
+                    onClick={() => updatePricing({ subsidyOverride: null })}
+                    className="text-xs text-navy-mid hover:text-gold-dark flex items-center gap-1"
+                    title="Reset to auto-calculated"
+                  >
+                    <RotateCcw className="w-3 h-3" /> reset
+                  </button>
+                )}
+              </span>
+            }
+            hint={
+              subsidyIsOverride
+                ? 'Manual override. Will show on the PDF.'
+                : 'Auto-calculated from PM Surya Ghar slabs (≤5 kW residential). Edit to override.'
+            }
+          >
+            <input
+              type="number"
+              min="0"
+              className="input"
+              value={subsidyShown}
+              onChange={(e) => updatePricing({ subsidyOverride: Number(e.target.value) })}
+            />
+          </Field>
         </div>
 
         {/* Commercial Offer summary (mirrors the PDF layout) */}
@@ -165,12 +179,12 @@ const Step4Pricing = ({ draft, updatePricing, computed, config }) => {
               <div className="py-3 border-b border-white/10">
                 <div className="flex justify-between gap-3">
                   <span className="text-white/70 leading-snug">
-                    Liasoning with BESCOM (Registration, PPA, Bi-directional Meter & Synchronization)
+                    Liasoning with {discomName} (Registration, PPA, Bi-directional Meter & Synchronization)
                   </span>
                 </div>
                 <div className="flex justify-between mt-2 text-white font-semibold">
                   <span className="text-white/70 font-normal">Subtotal</span>
-                  <span>{formatINR(bescomFee)}</span>
+                  <span>{formatINR(discomCharges)}</span>
                 </div>
               </div>
 

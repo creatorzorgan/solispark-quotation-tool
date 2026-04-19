@@ -10,6 +10,41 @@ export const StatusChip = ({ status }) => {
   return <span className={map[status] || 'chip-gray'}>{status}</span>;
 };
 
+// Datalist-backed combobox — acts like a dropdown (click to open, arrow-key
+// navigation) AND a free-text input (anything the user types is accepted).
+// The browser handles the popover natively. Pass `options` as an array of
+// strings or `{ value, label }` objects. Changes fire on every keystroke;
+// consumers decide whether the current value matches a preset.
+export const Combobox = ({
+  id,
+  value,
+  onChange,
+  options = [],
+  placeholder,
+  className = 'input',
+  onBlur,
+}) => (
+  <>
+    <input
+      list={id}
+      type="text"
+      className={className}
+      value={value ?? ''}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlur}
+      placeholder={placeholder}
+      autoComplete="off"
+    />
+    <datalist id={id}>
+      {options.map((o, i) => {
+        const val = typeof o === 'string' ? o : o.value;
+        const lbl = typeof o === 'string' ? undefined : o.label;
+        return <option key={`${val}-${i}`} value={val}>{lbl}</option>;
+      })}
+    </datalist>
+  </>
+);
+
 export const Field = ({ label, children, hint, error, className = '' }) => (
   <div className={className}>
     {label && <label className="label">{label}</label>}
