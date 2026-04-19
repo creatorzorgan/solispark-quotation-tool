@@ -1,0 +1,237 @@
+{
+  "company": {
+    "name": "Solispark Energy Pvt. Ltd.",
+    "tagline": "We Build Energy Empires.",
+    "website": "solisparkenergy.com",
+    "email": "solisparkenergy@gmail.com",
+    "phone_1": "+91 98868 86122",
+    "phone_2": "+91 77603 75599",
+    "address": {
+      "line_1": "#244, F Block, 15th Main Road",
+      "line_2": "Sahakarnagar, Bengaluru - 92",
+      "state": "Karnataka",
+      "country": "India"
+    },
+    "gstin": "PLACEHOLDER_GSTIN",
+    "founders": [
+      {
+        "name": "Ranveer Dorai",
+        "title": "Director of Engineering"
+      },
+      {
+        "name": "Pruthvik Hariprasad",
+        "title": "Director of Strategy"
+      }
+    ],
+    "certifications": [
+      "MNRE Approved Vendor",
+      "DPIIT Recognized (Startup India)",
+      "Official Axitec Distribution Partner"
+    ],
+    "stats": {
+      "projects_completed": "25+",
+      "deployed_capacity_mw": "10+",
+      "industrial_partners": "50+",
+      "google_rating": "5.0",
+      "service_sla_hours": 48,
+      "axitec_warranty_years": 30
+    }
+  },
+  "brand": {
+    "colors": {
+      "navy_dark": "#0F1A2E",
+      "navy_mid": "#1A2744",
+      "navy_light": "#152036",
+      "gold_primary": "#F5A623",
+      "gold_light": "#FFD080",
+      "gold_dark": "#D4891A",
+      "white": "#FFFFFF",
+      "off_white": "#F8F6F1",
+      "gray_100": "#F0EDE8",
+      "gray_200": "#D9D4CC",
+      "gray_400": "#9A9590",
+      "gray_600": "#6B6560",
+      "gray_800": "#3D3833",
+      "success_green": "#22C55E",
+      "error_red": "#EF4444"
+    },
+    "fonts": {
+      "headings": {
+        "family": "Space Grotesk",
+        "source": "Google Fonts",
+        "weights": [500, 600, 700]
+      },
+      "body": {
+        "family": "Plus Jakarta Sans",
+        "source": "Google Fonts",
+        "weights": [400, 500, 600, 700]
+      }
+    },
+    "border_radius": {
+      "small": "8px",
+      "medium": "12px",
+      "large": "20px",
+      "pill": "50px"
+    }
+  },
+  "pricing_defaults": {
+    "panels": {
+      "axitec_545w": {
+        "brand": "Axitec",
+        "model": "AXIpremium XXL HC",
+        "wattage": 545,
+        "price_per_panel": 15500,
+        "warranty_years": 30,
+        "country": "Germany",
+        "tier": 1
+      },
+      "adani_545w": {
+        "brand": "Adani Solar",
+        "model": "ASP-7-545",
+        "wattage": 545,
+        "price_per_panel": 14500,
+        "warranty_years": 25,
+        "country": "India",
+        "tier": 1
+      },
+      "waaree_540w": {
+        "brand": "Waaree",
+        "model": "WS-540",
+        "wattage": 540,
+        "price_per_panel": 14000,
+        "warranty_years": 25,
+        "country": "India",
+        "tier": 1
+      },
+      "rayzon_550w": {
+        "brand": "Rayzon Solar",
+        "model": "RZ-550",
+        "wattage": 550,
+        "price_per_panel": 13500,
+        "warranty_years": 25,
+        "country": "India",
+        "tier": 1
+      }
+    },
+    "inverters": {
+      "solis_5kw": {
+        "brand": "Solis",
+        "capacity_kw": 5,
+        "price": 45000,
+        "warranty_years": 10
+      },
+      "solis_10kw": {
+        "brand": "Solis",
+        "capacity_kw": 10,
+        "price": 85000,
+        "warranty_years": 10
+      },
+      "sungrow_5kw": {
+        "brand": "Sungrow",
+        "capacity_kw": 5,
+        "price": 48000,
+        "warranty_years": 10
+      },
+      "sungrow_10kw": {
+        "brand": "Sungrow",
+        "capacity_kw": 10,
+        "price": 90000,
+        "warranty_years": 10
+      }
+    },
+    "other_costs_per_kw": {
+      "mounting_structure": 8000,
+      "electrical_wiring": 5000,
+      "installation_labor": 4000
+    },
+    "flat_costs": {
+      "net_metering_fees": 10000,
+      "transportation": 5000
+    },
+    "tax": {
+      "gst_rate_percent": 13.8,
+      "gst_note": "GST applicable on service component"
+    },
+    "government_subsidy": {
+      "residential_up_to_3kw": 14588,
+      "residential_3kw_to_10kw_per_kw": 7294,
+      "residential_above_10kw": 0,
+      "commercial_industrial": 0,
+      "note": "PM Surya Ghar Muft Bijli Yojana rates — verify current rates before quoting"
+    }
+  },
+  "payment_terms": {
+    "advance_percent": 30,
+    "before_dispatch_percent": 65,
+    "post_installation_percent": 5,
+    "proposal_validity_days": 15
+  },
+  "calculation_constants": {
+    "peak_sun_hours_bengaluru": 4.5,
+    "average_bescom_rate_per_unit": 7.5,
+    "annual_tariff_escalation_percent": 5,
+    "system_degradation_per_year_percent": 0.5,
+    "co2_offset_kg_per_kwh": 0.82,
+    "panel_lifespan_years": 25,
+    "sqft_per_kw_rooftop": 100,
+    "days_per_month": 30
+  },
+  "electricity_providers": {
+    "bescom": {
+      "name": "BESCOM",
+      "full_name": "Bangalore Electricity Supply Company",
+      "avg_rate_high_slab": 7.5
+    },
+    "hescom": {
+      "name": "HESCOM",
+      "full_name": "Hubli Electricity Supply Company",
+      "avg_rate_high_slab": 7.0
+    },
+    "gescom": {
+      "name": "GESCOM",
+      "full_name": "Gulbarga Electricity Supply Company",
+      "avg_rate_high_slab": 6.8
+    },
+    "cesc": {
+      "name": "CESC",
+      "full_name": "Chamundeshwari Electricity Supply Corporation",
+      "avg_rate_high_slab": 7.2
+    },
+    "mescom": {
+      "name": "MESCOM",
+      "full_name": "Mangalore Electricity Supply Company",
+      "avg_rate_high_slab": 7.0
+    }
+  },
+  "proposal_template": {
+    "reference_prefix": "SP",
+    "year": 2026,
+    "pages": [
+      "Cover Page",
+      "About Solispark",
+      "Energy Assessment",
+      "System Specifications",
+      "Investment Summary",
+      "ROI & Savings Projection",
+      "Why Solispark",
+      "Terms & Conditions",
+      "Next Steps & Contact"
+    ],
+    "terms_and_conditions": [
+      "This proposal is valid for 15 days from the date of issue.",
+      "Prices are subject to change based on market conditions after the validity period.",
+      "30% advance payment is required to confirm the order.",
+      "65% payment is due before material dispatch to site.",
+      "5% balance payment is due upon successful commissioning.",
+      "Installation timeline: 7-14 days for residential, 30-60 days for commercial/industrial.",
+      "Net metering application will be filed by Solispark within 7 days of commissioning.",
+      "Annual Maintenance Contract (AMC) available at additional cost after warranty period.",
+      "48-hour service response SLA included for the first year.",
+      "All panels come with manufacturer warranty as specified in the system specifications.",
+      "Structural warranty on mounting: 10 years.",
+      "Inverter warranty: As per manufacturer terms (typically 5-10 years).",
+      "Any additional civil work required on the roof is not included in this proposal.",
+      "Pricing assumes standard installation conditions. Complex roofs may require additional charges."
+    ]
+  }
+}
