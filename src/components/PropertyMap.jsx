@@ -379,18 +379,6 @@ const PropertyMap = ({ initialAddress, roofSnapshot, roofLocation, onCapture, on
           <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" /> {captureError}
         </div>
       )}
-
-      {/* Captured preview */}
-      {roofSnapshot && (
-        <div>
-          <div className="text-xs uppercase tracking-wider text-cream-600 mb-2">
-            Captured Snapshot (embedded in PDF)
-          </div>
-          <div className="rounded-xl overflow-hidden shadow-cardHover ring-1 ring-navy-dark/10">
-            <img src={roofSnapshot} alt="Roof satellite view" className="w-full block" />
-          </div>
-        </div>
-      )}
     </div>
   );
 };
