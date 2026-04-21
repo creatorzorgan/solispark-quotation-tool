@@ -10,6 +10,9 @@ import {
   Sun,
   CheckCircle2,
   XCircle,
+  Cloud,
+  CloudOff,
+  RefreshCw,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext.jsx';
 
@@ -20,8 +23,46 @@ const navItems = [
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
+// Compact cloud-sync indicator shown in the sidebar footer.
+const SyncBadge = ({ syncState }) => {
+  if (!syncState) return null;
+  const { status, enabled, lastSyncedAt } = syncState;
+
+  if (!enabled) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-white/40">
+        <CloudOff className="w-3.5 h-3.5" />
+        <span>Local only</span>
+      </div>
+    );
+  }
+  if (status === 'syncing') {
+    return (
+      <div className="flex items-center gap-2 text-xs text-white/60">
+        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+        <span>Syncing…</span>
+      </div>
+    );
+  }
+  if (status === 'error') {
+    return (
+      <div className="flex items-center gap-2 text-xs text-rose-300" title={syncState.lastError || ''}>
+        <CloudOff className="w-3.5 h-3.5" />
+        <span>Sync offline</span>
+      </div>
+    );
+  }
+  const when = lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+  return (
+    <div className="flex items-center gap-2 text-xs text-emerald-300" title={`Synced at ${when}`}>
+      <Cloud className="w-3.5 h-3.5" />
+      <span>Synced{when ? ` · ${when}` : ''}</span>
+    </div>
+  );
+};
+
 const Layout = () => {
-  const { toast, config } = useApp();
+  const { toast, config, syncState } = useApp();
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -79,8 +120,9 @@ const Layout = () => {
           ))}
         </nav>
 
-        <div className="absolute bottom-6 left-6 right-6 text-xs text-white/40">
-          <div className="font-heading text-gold-light text-sm mb-1">
+        <div className="absolute bottom-6 left-6 right-6 text-xs text-white/40 space-y-2">
+          <SyncBadge syncState={syncState} />
+          <div className="font-heading text-gold-light text-sm">
             {config.company.tagline}
           </div>
           <div>© {new Date().getFullYear()} Solispark Energy</div>

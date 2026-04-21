@@ -1,4 +1,7 @@
 // localStorage wrapper for quotations + config.
+//
+// This is the instant-render cache for the app. AppContext paints from here
+// on first render, then reconciles against Supabase in the background.
 
 import { DEFAULT_CONFIG } from '../data/defaultConfig.js';
 import { SAMPLE_QUOTATIONS } from '../data/sampleData.js';
@@ -7,6 +10,14 @@ const K_QUOTATIONS = 'solispark_quotations_v1';
 const K_CONFIG = 'solispark_config_v1';
 const K_COUNTER = 'solispark_ref_counter_v1';
 const K_SEEDED = 'solispark_seeded_v1';
+
+// Skip the sample-data seed when Supabase is wired up — otherwise every fresh
+// browser would plant fake rows that then sync up to the shared workspace.
+const supabaseEnabled = Boolean(
+  typeof import.meta !== 'undefined' &&
+    import.meta.env?.VITE_SUPABASE_URL &&
+    import.meta.env?.VITE_SUPABASE_ANON_KEY
+);
 
 const readJSON = (key, fallback) => {
   try {
@@ -82,10 +93,18 @@ export const generateReferenceNumber = () => {
 };
 
 // --- Seed with sample data on first run -----------------------------------
+// Skipped entirely when Supabase is on, so fresh devices don't push fake
+// quotations into the shared workspace.
 const seedIfEmpty = () => {
+  if (supabaseEnabled) return;
   if (readJSON(K_SEEDED, false)) return;
   writeJSON(K_QUOTATIONS, SAMPLE_QUOTATIONS);
   writeJSON(K_SEEDED, true);
+};
+
+// --- Bulk replace (used after remote sync pulls the authoritative list) ----
+export const replaceAllQuotations = (list) => {
+  writeJSON(K_QUOTATIONS, Array.isArray(list) ? list : []);
 };
 
 // --- Expiry sweep ---------------------------------------------------------
