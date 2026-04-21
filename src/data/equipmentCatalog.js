@@ -94,6 +94,7 @@ export const EQUIPMENT_CATALOG = {
     { label: 'Battery 10 kWh',                       brand: 'Generic',    path: enc('Battery/10 kwh battery.pdf') },
     { label: 'Battery (General)',                    brand: 'Generic',    path: enc('Battery/battery.pdf') },
     { label: 'Deye Battery 6.1-V',                   brand: 'Deye',       path: enc('Battery/Deye - 6.1-V.pdf') },
+    { label: 'Deye Battery 12 kWh',                  brand: 'Deye',       path: enc('Battery/Deye - 12kwh.pdf') },
     { label: 'Exide Battery',                        brand: 'Exide',      path: enc('Battery/excide battery.pdf') },
     { label: 'PowerBuild Battery',                   brand: 'PowerBuild', path: enc('Battery/power build - battery.pdf') },
   ],
