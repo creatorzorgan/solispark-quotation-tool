@@ -461,28 +461,47 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
   y += 3;
 
   // ── Roof satellite snapshot (if the sales team captured one in Step 1) ──
-  // Centred under the opening paragraph, sized to 120mm wide so the rest of
-  // the letter still fits on the page. The drop shadow + rounded corners are
-  // already baked into the sprite by composeRoofSnapshot().
+  // Centred under the opening paragraph. The drop shadow + rounded corners
+  // are already baked into the sprite by composeRoofSnapshot(). We always
+  // render if we have a sprite — previously an over-strict overflow guard
+  // silently skipped the image on pages that already had long opening
+  // paragraphs. Instead, if the remaining letter body won't fit below the
+  // image on the same page, we flush to a fresh letterhead page and continue
+  // the closing there. That way the sales team's capture is NEVER dropped.
+  let coverLetterOverflowed = false;
   if (roofSprite) {
-    const imgW = 120;
+    // 95mm wide fits comfortably between the margins and keeps the aspect
+    // readable. For a typical 4:3 map capture that's ~71mm tall.
+    const imgW = 95;
     const aspect = roofSprite.height / roofSprite.width;
     const imgH = imgW * aspect;
-    // Only render if there's enough vertical room on the page for the sprite
-    // AND the remaining paragraphs + signature block below it.
-    const neededBelow = 95; // approx mm for remaining body + closing + signature
-    if (y + imgH + neededBelow < BOTTOM) {
-      const imgX = (PW - imgW) / 2;
-      try {
-        doc.addImage(roofSprite.dataUrl, 'PNG', imgX, y, imgW, imgH, undefined, 'FAST');
-        y += imgH + 2;
-        // Tiny caption so the client knows it's their exact property.
-        centeredText(doc, 'Satellite view of the proposed installation site', y, 8, GRAY, 'italic');
-        y += 6;
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn('[pdf] roof sprite embed failed:', err);
-      }
+    const imgX = (PW - imgW) / 2;
+
+    // eslint-disable-next-line no-console
+    console.debug('[pdf] embedding roof sprite', {
+      y, imgW, imgH, spriteW: roofSprite.width, spriteH: roofSprite.height,
+    });
+
+    try {
+      doc.addImage(roofSprite.dataUrl, 'PNG', imgX, y, imgW, imgH, undefined, 'FAST');
+      y += imgH + 2;
+      // Tiny caption so the client knows it's their exact property.
+      centeredText(doc, 'Satellite view of the proposed installation site', y, 8, GRAY, 'italic');
+      y += 6;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[pdf] roof sprite embed failed:', err);
+    }
+
+    // If the image pushed us near the footer, stamp page 2, then continue the
+    // closing paragraphs on a fresh page so nothing gets clipped. The downstream
+    // pageNum(doc, 2, ...) call is skipped via the overflow flag to avoid a
+    // double stamp.
+    if (y > BOTTOM - 70) {
+      pageNum(doc, 2, totalPages);
+      doc.addPage();
+      y = TOP + 6;
+      coverLetterOverflowed = true;
     }
   }
 
@@ -541,7 +560,11 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
   y += 5;
   leftText(doc, 'Director', M, y, 9, GRAY);
 
-  pageNum(doc, 2, totalPages);
+  // Only stamp the cover-letter page number here if we didn't already stamp it
+  // on the first cover-letter page before overflowing the closing block.
+  if (!coverLetterOverflowed) {
+    pageNum(doc, 2, totalPages);
+  }
 
   // ── PAGE 3: About Solispark ──────────────────────────────────────────────
   doc.addPage();
