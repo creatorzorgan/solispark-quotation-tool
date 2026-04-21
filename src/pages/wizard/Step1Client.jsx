@@ -1,6 +1,7 @@
 import React from 'react';
 import { Field } from '../../components/ui.jsx';
 import PropertyMap from '../../components/PropertyMap.jsx';
+import ErrorBoundary from '../../components/ErrorBoundary.jsx';
 import { PROPERTY_TYPES, CLIENT_CATEGORIES } from '../../data/defaultConfig.js';
 import { Satellite } from 'lucide-react';
 
@@ -94,13 +95,15 @@ const Step1Client = ({ draft, updateClient }) => {
           </div>
         </div>
         <div className="mt-5">
-          <PropertyMap
-            initialAddress={c.address}
-            roofSnapshot={c.roofSnapshot}
-            roofLocation={c.roofLocation}
-            onCapture={handleCapture}
-            onClear={handleClear}
-          />
+          <ErrorBoundary label="The satellite map">
+            <PropertyMap
+              initialAddress={c.address}
+              roofSnapshot={c.roofSnapshot}
+              roofLocation={c.roofLocation}
+              onCapture={handleCapture}
+              onClear={handleClear}
+            />
+          </ErrorBoundary>
         </div>
       </div>
     </div>

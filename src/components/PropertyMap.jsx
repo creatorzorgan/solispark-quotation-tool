@@ -15,6 +15,12 @@
 //   include `Access-Control-Allow-Origin: *`) are treated as same-origin for
 //   canvas read-back. Without it the canvas is tainted and `toDataURL` throws.
 //
+// • Place autocomplete: Google deprecated the classic `places.Autocomplete`
+//   class for Cloud projects created after March 2025, so a fresh API key
+//   crashes with "undefined is not a constructor" the moment we try to
+//   instantiate it. We feature-detect and fall back to plain Geocoder on
+//   Enter, which always works regardless of project age.
+//
 // • We downscale captures above ~1600px wide before returning the data URL.
 //   Google Maps containers at 2× DPR can easily produce 3000px images; those
 //   bloat the quotation JSON blob and slow down Supabase upserts.
@@ -51,10 +57,15 @@ const downscaleCanvas = (sourceCanvas) => {
 const waitForIdle = (map) =>
   new Promise((resolve) => {
     const timeout = setTimeout(resolve, 4000);
-    window.google.maps.event.addListenerOnce(map, 'idle', () => {
+    try {
+      window.google.maps.event.addListenerOnce(map, 'idle', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    } catch {
       clearTimeout(timeout);
       resolve();
-    });
+    }
   });
 
 const PropertyMap = ({ initialAddress, roofSnapshot, roofLocation, onCapture, onClear }) => {
@@ -64,83 +75,134 @@ const PropertyMap = ({ initialAddress, roofSnapshot, roofLocation, onCapture, on
   const mapRef = useRef(null);
   const markerRef = useRef(null);
   const autocompleteRef = useRef(null);
+  const geocoderRef = useRef(null);
 
   const [capturing, setCapturing] = useState(false);
   const [captureError, setCaptureError] = useState(null);
   const [searchText, setSearchText] = useState(roofLocation?.formattedAddress || initialAddress || '');
+  const [autocompleteAvailable, setAutocompleteAvailable] = useState(false);
 
-  // ── Initialise the map once the API is ready ─────────────────────────────
+  // ── Geocode-on-Enter fallback (used when classic Autocomplete isn't
+  // available on the API key). Also called programmatically for the initial
+  // address lookup.
+  const geocodeAndFly = useCallback((address) => {
+    if (!address || !mapRef.current || !geocoderRef.current) return;
+    geocoderRef.current.geocode({ address, region: 'in' }, (results, status) => {
+      if (status === 'OK' && results?.[0]) {
+        const loc = results[0].geometry.location;
+        const viewport = results[0].geometry.viewport;
+        if (viewport) mapRef.current.fitBounds(viewport);
+        else {
+          mapRef.current.setCenter(loc);
+          mapRef.current.setZoom(DEFAULT_ZOOM);
+        }
+        if (markerRef.current) markerRef.current.setPosition(loc);
+        setSearchText(results[0].formatted_address || address);
+      }
+    });
+  }, []);
+
+  // ── Initialise the map once the API is ready. Guarded against re-entry
+  // (React StrictMode double-invokes effects in dev) and wrapped in a try so
+  // any Google Maps runtime error surfaces to the error boundary instead of
+  // crashing mid-mount.
   useEffect(() => {
     if (!ready || !mapContainerRef.current || mapRef.current) return;
 
     const google = window.google;
-    const initialCenter = roofLocation?.lat && roofLocation?.lng
-      ? { lat: roofLocation.lat, lng: roofLocation.lng }
-      : DEFAULT_CENTER;
-    const initialZoom = roofLocation?.zoom || DEFAULT_ZOOM;
+    if (!google?.maps?.Map) return;
 
-    const map = new google.maps.Map(mapContainerRef.current, {
-      center: initialCenter,
-      zoom: initialZoom,
-      mapTypeId: 'satellite',
-      tilt: 0, // critical for capture — flat ortho view, not 3D
-      disableDefaultUI: false,
-      mapTypeControl: true,
-      streetViewControl: false,
-      fullscreenControl: false,
-      zoomControl: true,
-      gestureHandling: 'greedy',
-      rotateControl: false,
-    });
-    mapRef.current = map;
+    try {
+      const initialCenter =
+        roofLocation?.lat && roofLocation?.lng
+          ? { lat: roofLocation.lat, lng: roofLocation.lng }
+          : DEFAULT_CENTER;
+      const initialZoom = roofLocation?.zoom || DEFAULT_ZOOM;
 
-    // Persistent centre marker so the user knows exactly what they're framing.
-    const marker = new google.maps.Marker({
-      position: initialCenter,
-      map,
-      draggable: false,
-    });
-    markerRef.current = marker;
-
-    // Keep the marker glued to the map centre as the user pans/zooms.
-    map.addListener('center_changed', () => {
-      marker.setPosition(map.getCenter());
-    });
-
-    // Wire up the address search box to the Places Autocomplete API.
-    if (searchInputRef.current && google.maps.places) {
-      const ac = new google.maps.places.Autocomplete(searchInputRef.current, {
-        fields: ['geometry', 'formatted_address', 'name'],
-        componentRestrictions: { country: 'in' },
+      const map = new google.maps.Map(mapContainerRef.current, {
+        center: initialCenter,
+        zoom: initialZoom,
+        mapTypeId: 'satellite',
+        tilt: 0,
+        disableDefaultUI: false,
+        mapTypeControl: true,
+        streetViewControl: false,
+        fullscreenControl: false,
+        zoomControl: true,
+        gestureHandling: 'greedy',
+        rotateControl: false,
       });
-      ac.bindTo('bounds', map);
-      ac.addListener('place_changed', () => {
-        const place = ac.getPlace();
-        if (!place.geometry) return;
-        if (place.geometry.viewport) {
-          map.fitBounds(place.geometry.viewport);
-        } else {
-          map.setCenter(place.geometry.location);
-          map.setZoom(DEFAULT_ZOOM);
+      mapRef.current = map;
+
+      // Persistent centre marker. Marker may be deprecated on very new API
+      // versions in favour of AdvancedMarkerElement — if Marker is gone,
+      // silently skip it; the fixed crosshair overlay still guides framing.
+      if (google.maps.Marker) {
+        const marker = new google.maps.Marker({
+          position: initialCenter,
+          map,
+          draggable: false,
+        });
+        markerRef.current = marker;
+        map.addListener('center_changed', () => {
+          try {
+            marker.setPosition(map.getCenter());
+          } catch {
+            /* ignore */
+          }
+        });
+      }
+
+      // Geocoder — always available regardless of API key vintage. Used for
+      // both the initial address lookup and the Enter-key search fallback.
+      if (google.maps.Geocoder) {
+        geocoderRef.current = new google.maps.Geocoder();
+      }
+
+      // Try to wire up classic Places Autocomplete. This class was deprecated
+      // in March 2025 for new Cloud projects, so feature-detect before
+      // constructing. If unavailable, the Enter-key geocode flow kicks in.
+      if (
+        searchInputRef.current &&
+        google.maps.places &&
+        typeof google.maps.places.Autocomplete === 'function'
+      ) {
+        try {
+          const ac = new google.maps.places.Autocomplete(searchInputRef.current, {
+            fields: ['geometry', 'formatted_address', 'name'],
+            componentRestrictions: { country: 'in' },
+          });
+          ac.bindTo('bounds', map);
+          ac.addListener('place_changed', () => {
+            const place = ac.getPlace();
+            if (!place?.geometry) return;
+            if (place.geometry.viewport) map.fitBounds(place.geometry.viewport);
+            else {
+              map.setCenter(place.geometry.location);
+              map.setZoom(DEFAULT_ZOOM);
+            }
+            if (markerRef.current) markerRef.current.setPosition(place.geometry.location);
+            setSearchText(place.formatted_address || place.name || '');
+          });
+          autocompleteRef.current = ac;
+          setAutocompleteAvailable(true);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn('[PropertyMap] Places Autocomplete unavailable, falling back to geocode:', err);
+          setAutocompleteAvailable(false);
         }
-        marker.setPosition(place.geometry.location);
-        setSearchText(place.formatted_address || place.name || '');
-      });
-      autocompleteRef.current = ac;
-    }
+      }
 
-    // If we arrived with an initialAddress but no saved location, geocode it
-    // so the map lands on the client's roof without the user typing again.
-    if (!roofLocation?.lat && initialAddress) {
-      const geocoder = new google.maps.Geocoder();
-      geocoder.geocode({ address: initialAddress, region: 'in' }, (results, status) => {
-        if (status === 'OK' && results?.[0]) {
-          const loc = results[0].geometry.location;
-          map.setCenter(loc);
-          map.setZoom(DEFAULT_ZOOM);
-          marker.setPosition(loc);
-        }
-      });
+      // If we arrived with an initialAddress but no saved location, geocode
+      // it so the map lands on the client's roof without the user typing.
+      if (!roofLocation?.lat && initialAddress && geocoderRef.current) {
+        geocodeAndFly(initialAddress);
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[PropertyMap] map init failed:', err);
+      // Rethrow so the ErrorBoundary parent shows its fallback.
+      throw err;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
@@ -154,8 +216,6 @@ const PropertyMap = ({ initialAddress, roofSnapshot, roofLocation, onCapture, on
     try {
       const map = mapRef.current;
       await waitForIdle(map);
-      // An extra tick — tiles are "loaded" per the event but the raster
-      // sometimes needs one more frame to commit pixels to the <img>.
       await new Promise((r) => setTimeout(r, 250));
 
       const rawCanvas = await html2canvas(mapContainerRef.current, {
@@ -165,7 +225,6 @@ const PropertyMap = ({ initialAddress, roofSnapshot, roofLocation, onCapture, on
         backgroundColor: null,
         scale: window.devicePixelRatio || 1,
         ignoreElements: (el) =>
-          // Strip Google's UI chrome from the capture — we want clean satellite only.
           el.classList?.contains('gm-style-cc') ||
           el.classList?.contains('gmnoprint') ||
           el.classList?.contains('gm-fullscreen-control') ||
@@ -179,8 +238,8 @@ const PropertyMap = ({ initialAddress, roofSnapshot, roofLocation, onCapture, on
       onCapture({
         snapshot: dataUrl,
         location: {
-          lat: center.lat(),
-          lng: center.lng(),
+          lat: center?.lat?.() ?? null,
+          lng: center?.lng?.() ?? null,
           zoom: map.getZoom(),
           formattedAddress: searchText || null,
           capturedAt: new Date().toISOString(),
@@ -198,6 +257,16 @@ const PropertyMap = ({ initialAddress, roofSnapshot, roofLocation, onCapture, on
       setCapturing(false);
     }
   }, [onCapture, searchText]);
+
+  // Enter-key handler for the search box — only used when Autocomplete isn't
+  // available. Also harmless to have when Autocomplete IS active, since
+  // pressing Enter on a suggestion is consumed by Autocomplete first.
+  const handleSearchKeyDown = (e) => {
+    if (e.key === 'Enter' && !autocompleteAvailable) {
+      e.preventDefault();
+      geocodeAndFly(searchText);
+    }
+  };
 
   // ── Render paths ─────────────────────────────────────────────────────────
 
@@ -236,7 +305,14 @@ const PropertyMap = ({ initialAddress, roofSnapshot, roofLocation, onCapture, on
           type="text"
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
-          placeholder={ready ? 'Search for the property address…' : 'Loading map…'}
+          onKeyDown={handleSearchKeyDown}
+          placeholder={
+            ready
+              ? autocompleteAvailable
+                ? 'Search for the property address…'
+                : 'Type address and press Enter to search…'
+              : 'Loading map…'
+          }
           disabled={!ready}
           className="input pl-9"
           autoComplete="off"
