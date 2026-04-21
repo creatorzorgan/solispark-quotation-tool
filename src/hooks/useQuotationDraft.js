@@ -27,6 +27,12 @@ export const createEmptyQuotation = (config) => ({
     address: '',
     propertyType: 'Independent House',
     category: 'Residential',
+    // Satellite roof snapshot — captured in Step 1 via Google Maps + html2canvas.
+    // roofSnapshot is a base64 data URL (JPEG ~85%) that gets embedded into the
+    // cover-letter page of the generated PDF. roofLocation is kept for context
+    // and re-capture. Both null until the user clicks "Capture Roof".
+    roofSnapshot: null,
+    roofLocation: null, // { lat, lng, zoom, formattedAddress, capturedAt }
   },
   energy: {
     monthlyBill: 10000,

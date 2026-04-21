@@ -163,6 +163,90 @@ const pageNum = (doc, num, total) => {
   rightText(doc, `${num} / ${total}`, PW - M, BOTTOM + 4, 7, GRAY);
 };
 
+// ─── Roof snapshot renderer ──────────────────────────────────────────────────
+// jsPDF's addImage can't do rounded corners or drop shadows on its own, so we
+// pre-compose the effect on a canvas: pad the bitmap with transparent gutters,
+// stamp a soft shadow underneath, clip the source image to a rounded-rect path,
+// and export as PNG with alpha. The resulting sprite drops into the document as
+// a single image and feels like a premium custom-designed element.
+async function composeRoofSnapshot(dataUrl) {
+  if (!dataUrl) return null;
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const el = new Image();
+      el.crossOrigin = 'anonymous';
+      el.onload = () => resolve(el);
+      el.onerror = reject;
+      el.src = dataUrl;
+    });
+
+    // Canvas sizing — square-ish pad so the shadow blur has room to breathe.
+    const pad = 48;
+    const radius = 36;
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width + pad * 2;
+    canvas.height = img.height + pad * 2;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    // Path helper for the rounded rect.
+    const roundedRectPath = () => {
+      const x = pad;
+      const y = pad;
+      const w = img.width;
+      const h = img.height;
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + w - radius, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+      ctx.lineTo(x + w, y + h - radius);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+      ctx.lineTo(x + radius, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+      ctx.lineTo(x, y + radius);
+      ctx.quadraticCurveTo(x, y, x + radius, y);
+      ctx.closePath();
+    };
+
+    // 1) Soft drop shadow — fill a rounded-rect "silhouette" with shadow cast.
+    ctx.save();
+    ctx.shadowColor = 'rgba(15, 26, 46, 0.28)';
+    ctx.shadowBlur = 36;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 14;
+    ctx.fillStyle = '#ffffff';
+    roundedRectPath();
+    ctx.fill();
+    ctx.restore();
+
+    // 2) Clip to the rounded rect and draw the map bitmap inside.
+    ctx.save();
+    roundedRectPath();
+    ctx.clip();
+    ctx.drawImage(img, pad, pad);
+    ctx.restore();
+
+    // 3) Subtle gold hairline border for the "premium custom proposal" feel.
+    ctx.save();
+    ctx.strokeStyle = 'rgba(212, 137, 26, 0.85)';
+    ctx.lineWidth = 3;
+    roundedRectPath();
+    ctx.stroke();
+    ctx.restore();
+
+    return {
+      dataUrl: canvas.toDataURL('image/png'),
+      width: canvas.width,
+      height: canvas.height,
+    };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[pdf] composeRoofSnapshot failed:', err);
+    return null;
+  }
+}
+
 // ─── Signature image loader ──────────────────────────────────────────────────
 async function loadSignature() {
   if (SIGNATURE_DATA_URL) return SIGNATURE_DATA_URL;
@@ -285,6 +369,11 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
   // Load signature up-front (awaited, used on terms page)
   const signature = await loadSignature();
 
+  // Pre-compose the roof snapshot (if captured in Step 1) so it's ready to
+  // drop onto the cover letter below the opening paragraph. Pre-composition
+  // bakes in the rounded corners + drop shadow that jsPDF can't render.
+  const roofSprite = c.roofSnapshot ? await composeRoofSnapshot(c.roofSnapshot) : null;
+
   // ── PAGE 1: Cover ────────────────────────────────────────────────────────
   let y = 55;
   centeredText(doc, co.name.toUpperCase(), y, 12, NAVY, 'bold');
@@ -370,6 +459,32 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
     { size: 10, lineHeight: 5 }
   );
   y += 3;
+
+  // ── Roof satellite snapshot (if the sales team captured one in Step 1) ──
+  // Centred under the opening paragraph, sized to 120mm wide so the rest of
+  // the letter still fits on the page. The drop shadow + rounded corners are
+  // already baked into the sprite by composeRoofSnapshot().
+  if (roofSprite) {
+    const imgW = 120;
+    const aspect = roofSprite.height / roofSprite.width;
+    const imgH = imgW * aspect;
+    // Only render if there's enough vertical room on the page for the sprite
+    // AND the remaining paragraphs + signature block below it.
+    const neededBelow = 95; // approx mm for remaining body + closing + signature
+    if (y + imgH + neededBelow < BOTTOM) {
+      const imgX = (PW - imgW) / 2;
+      try {
+        doc.addImage(roofSprite.dataUrl, 'PNG', imgX, y, imgW, imgH, undefined, 'FAST');
+        y += imgH + 2;
+        // Tiny caption so the client knows it's their exact property.
+        centeredText(doc, 'Satellite view of the proposed installation site', y, 8, GRAY, 'italic');
+        y += 6;
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('[pdf] roof sprite embed failed:', err);
+      }
+    }
+  }
 
   y = para(
     doc,
