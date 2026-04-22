@@ -7,6 +7,7 @@ import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import { PDFDocument } from 'pdf-lib';
 import { formatINR, formatDate, formatNumber, formatKw, formatKwh } from './format.js';
+import { captureSavingsChart } from './captureChart.jsx';
 
 // jsPDF's default Helvetica has no glyph for `₹` (U+20B9) — it renders as
 // a garbage character. We substitute `Rs.` for any currency output inside
@@ -373,6 +374,27 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
   // drop onto the cover letter below the opening paragraph. Pre-composition
   // bakes in the rounded corners + drop shadow that jsPDF can't render.
   const roofSprite = c.roofSnapshot ? await composeRoofSnapshot(c.roofSnapshot) : null;
+
+  // Pre-capture the 25-year savings chart — rendered off-screen via recharts
+  // + html2canvas — so we can drop a high-res PNG on the ROI page. We capture
+  // up-front (not lazily on page 7) so any failure logs cleanly before jsPDF
+  // has done significant work.
+  let savingsChartSprite = null;
+  const totalsSoFar = computed?.totals || {};
+  const netCostForChart = (totalsSoFar.afterSubsidy || 0) + (totalsSoFar.gst || 0);
+  if (s.systemSizeKw > 0 && e.perUnitRate > 0) {
+    try {
+      savingsChartSprite = await captureSavingsChart({
+        monthlyBill: e.monthlyBill,
+        netCost: netCostForChart,
+        systemSizeKw: s.systemSizeKw,
+        perUnitRate: e.perUnitRate,
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[pdf] captureSavingsChart threw:', err);
+    }
+  }
 
   // ── PAGE 1: Cover ────────────────────────────────────────────────────────
   let y = 55;
@@ -809,48 +831,82 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
   });
   y += 2 * (cardH + gridGap) + 4;
 
-  const barData = roi.yearlyBreakdown || [];
-  if (barData.length > 0) {
-    y = sectionHead(doc, 'Cumulative Savings vs. Investment (25 Years)', y);
+  // Hero 25-year chart — captured from the recharts component so the PDF gets
+  // exactly the same visual as the UI. Fills the full content width on the
+  // ROI page, making this the single most prominent financial asset in the
+  // whole proposal. If the capture failed (recharts didn't mount, html2canvas
+  // threw, etc.), we fall back to the previous primitive bar chart so the
+  // ROI page is never left bare.
+  if (savingsChartSprite) {
+    y = sectionHead(doc, '25-Year Savings vs. Grid Electricity', y);
     y += 4;
-    const chartX = M;
+
+    // Keep the natural aspect so the recharts output doesn't get stretched.
     const chartW = CW;
-    const chartH = 60;
-    const maxVal = Math.max(...barData.map((d) => d.cumulative));
-    // Payback basis: base cost ex-GST (aligned with ROI calc change)
-    const netCost = totals.afterSubsidy || 0;
-    const barW = (chartW - 10) / barData.length;
-
-    rect(doc, chartX, y, chartW, chartH, OFF_WHITE);
-
-    barData.forEach((d, i) => {
-      const bh = (d.cumulative / maxVal) * (chartH - 8);
-      const bx = chartX + 5 + i * barW;
-      const by = y + chartH - bh;
-      const color = d.cumulative >= netCost ? GOLD : NAVY_MID;
-      rect(doc, bx, by, barW - 1, bh, color);
-      if (d.year === 1 || d.year % 5 === 0) {
-        doc.setFontSize(6);
-        doc.setTextColor(...GRAY);
-        doc.text(`Y${d.year}`, bx + barW / 2, y + chartH + 4, { align: 'center' });
-      }
-    });
-
-    if (netCost > 0 && netCost < maxVal) {
-      const lineY = y + chartH - (netCost / maxVal) * (chartH - 8);
-      doc.setDrawColor(239, 68, 68);
-      doc.setLineWidth(0.5);
-      doc.setLineDashPattern([2, 2], 0);
-      doc.line(chartX, lineY, chartX + chartW, lineY);
-      doc.setLineDashPattern([], 0);
-      leftText(doc, `Investment: ${formatRs(netCost, { compact: true })}`, chartX + 2, lineY - 2, 7, [239, 68, 68], 'bold');
+    const chartH = chartW * (savingsChartSprite.height / savingsChartSprite.width);
+    // Drop-shadow-ish framing: off-white rect behind, gold hairline outline.
+    rect(doc, M - 1, y - 1, chartW + 2, chartH + 2, OFF_WHITE);
+    try {
+      doc.addImage(savingsChartSprite.dataUrl, 'PNG', M, y, chartW, chartH, undefined, 'FAST');
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[pdf] savings chart embed failed:', err);
     }
+    doc.setDrawColor(...GOLD);
+    doc.setLineWidth(0.4);
+    doc.rect(M, y, chartW, chartH, 'S');
+    y += chartH + 4;
 
-    y += chartH + 10;
-    rect(doc, M, y, 4, 4, NAVY_MID);
-    leftText(doc, 'Recovering investment', M + 6, y + 3.5, 7, GRAY);
-    rect(doc, M + 50, y, 4, 4, GOLD);
-    leftText(doc, 'Net profit zone', M + 56, y + 3.5, 7, GRAY);
+    leftText(
+      doc,
+      'Net Solar Savings cross zero at payback year, turning into pure profit thereafter. Grid costs are projected at 3% yearly tariff escalation.',
+      M, y, 8, GRAY, 'italic', CW
+    );
+    y += 6;
+  } else {
+    // Fallback: tiny jsPDF bar chart (original pre-recharts implementation).
+    const barData = roi.yearlyBreakdown || [];
+    if (barData.length > 0) {
+      y = sectionHead(doc, 'Cumulative Savings vs. Investment (25 Years)', y);
+      y += 4;
+      const chartX = M;
+      const chartW = CW;
+      const chartH = 60;
+      const maxVal = Math.max(...barData.map((d) => d.cumulative));
+      const netCost = totals.afterSubsidy || 0;
+      const barW = (chartW - 10) / barData.length;
+
+      rect(doc, chartX, y, chartW, chartH, OFF_WHITE);
+
+      barData.forEach((d, i) => {
+        const bh = (d.cumulative / maxVal) * (chartH - 8);
+        const bx = chartX + 5 + i * barW;
+        const by = y + chartH - bh;
+        const color = d.cumulative >= netCost ? GOLD : NAVY_MID;
+        rect(doc, bx, by, barW - 1, bh, color);
+        if (d.year === 1 || d.year % 5 === 0) {
+          doc.setFontSize(6);
+          doc.setTextColor(...GRAY);
+          doc.text(`Y${d.year}`, bx + barW / 2, y + chartH + 4, { align: 'center' });
+        }
+      });
+
+      if (netCost > 0 && netCost < maxVal) {
+        const lineY = y + chartH - (netCost / maxVal) * (chartH - 8);
+        doc.setDrawColor(239, 68, 68);
+        doc.setLineWidth(0.5);
+        doc.setLineDashPattern([2, 2], 0);
+        doc.line(chartX, lineY, chartX + chartW, lineY);
+        doc.setLineDashPattern([], 0);
+        leftText(doc, `Investment: ${formatRs(netCost, { compact: true })}`, chartX + 2, lineY - 2, 7, [239, 68, 68], 'bold');
+      }
+
+      y += chartH + 10;
+      rect(doc, M, y, 4, 4, NAVY_MID);
+      leftText(doc, 'Recovering investment', M + 6, y + 3.5, 7, GRAY);
+      rect(doc, M + 50, y, 4, 4, GOLD);
+      leftText(doc, 'Net profit zone', M + 56, y + 3.5, 7, GRAY);
+    }
   }
   pageNum(doc, 7, totalPages);
 

@@ -169,3 +169,55 @@ export const calculateROI = ({
 // Roof area check — warn if selected size is bigger than roof can fit.
 export const fitsOnRoof = (systemSizeKw, roofSqft, sqftPerKw = 100) =>
   !roofSqft || roofSqft >= systemSizeKw * sqftPerKw;
+
+// 25-year side-by-side comparison used by the "Cumulative Savings" chart.
+// Produces two cumulative series year 1 → `years`:
+//   - gridCost:    what the client would spend on grid electricity if they
+//                  *didn't* go solar, with their annual bill escalating at
+//                  `gridEscalationPercent` (default 3%) year over year.
+//   - netSavings:  cumulative solar savings (using the same tariff-escalation
+//                  + degradation model as calculateROI) minus the upfront
+//                  system cost. Starts negative, crosses zero at payback,
+//                  turns into profit after.
+// Kept deliberately separate from calculateROI so we don't break the existing
+// consumers (Step5 bar chart, PDF ROI page, docx exporter) that rely on its
+// current return shape.
+export const calculate25YearComparison = ({
+  monthlyBill,
+  netCost,
+  systemSizeKw,
+  perUnitRate,
+  years = 25,
+  peakSunHours = 4,
+  gridEscalationPercent = 3,
+  solarTariffEscalationPercent = 5,
+  degradationPercent = 0.5,
+}) => {
+  const annualBillYear1 = (monthlyBill || 0) * 12;
+  const monthlyGen = monthlyGenerationKwh(systemSizeKw, peakSunHours);
+
+  let cumulativeGridCost = 0;
+  let cumulativeSolarSavings = 0;
+  const data = [];
+
+  for (let y = 1; y <= years; y++) {
+    // Grid: compound the year-1 bill at gridEscalationPercent each year.
+    const gridBillThisYear = annualBillYear1 * Math.pow(1 + gridEscalationPercent / 100, y - 1);
+    cumulativeGridCost += gridBillThisYear;
+
+    // Solar: generation degrades slightly each year, tariff rises each year.
+    const rate = (perUnitRate || 0) * Math.pow(1 + solarTariffEscalationPercent / 100, y - 1);
+    const genFactor = Math.pow(1 - degradationPercent / 100, y - 1);
+    const solarSavingsThisYear = monthlyGen * 12 * rate * genFactor;
+    cumulativeSolarSavings += solarSavingsThisYear;
+
+    data.push({
+      year: y,
+      gridCost: Math.round(cumulativeGridCost),
+      netSavings: Math.round(cumulativeSolarSavings - (netCost || 0)),
+      cumulativeSolarSavings: Math.round(cumulativeSolarSavings),
+    });
+  }
+
+  return data;
+};

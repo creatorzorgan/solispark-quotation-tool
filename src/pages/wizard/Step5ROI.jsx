@@ -1,9 +1,10 @@
 import React from 'react';
 import { Stat } from '../../components/ui.jsx';
+import SavingsChart from '../../components/SavingsChart.jsx';
 import { formatINR, formatKwh, formatNumber } from '../../utils/format.js';
 import { Leaf, TrendingUp, Clock, Zap, IndianRupee, Sun } from 'lucide-react';
 
-const Step5ROI = ({ computed }) => {
+const Step5ROI = ({ draft, computed }) => {
   if (!computed) {
     return (
       <div className="text-center text-cream-600 py-12">
@@ -35,6 +36,35 @@ const Step5ROI = ({ computed }) => {
         <Stat label="Monthly Generation" value={formatKwh(roi.monthlyGenKwh)} icon={Zap} tone="light" />
         <Stat label="25-Year Savings" value={formatINR(roi.totalSavings, { compact: true })} icon={Sun} tone="light" />
         <Stat label="CO₂ Offset / Year" value={`${formatNumber(roi.co2PerYear)} kg`} icon={Leaf} tone="light" />
+      </div>
+
+      {/* 25-year cumulative savings chart — the hero financial visual. Same
+          component gets rendered off-screen and stamped on the PDF ROI page. */}
+      <div className="card p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-heading text-lg font-semibold text-navy-dark">
+              25-Year Savings vs. Grid Electricity
+            </h3>
+            <p className="text-xs text-cream-600 mt-1">
+              Net solar savings (after system cost) vs. what the client would spend on the grid,
+              assuming 3% annual tariff escalation.
+            </p>
+          </div>
+          <div className="text-right">
+            <div className="text-xs uppercase tracking-wider text-cream-600">Net 25-Yr Profit</div>
+            <div className="font-heading text-xl font-bold text-emerald-600">
+              {formatINR(roi.totalSavings - (totals.afterSubsidy + totals.gst), { compact: true })}
+            </div>
+          </div>
+        </div>
+        <SavingsChart
+          monthlyBill={draft.energy.monthlyBill}
+          netCost={totals.afterSubsidy + totals.gst}
+          systemSizeKw={draft.system.systemSizeKw}
+          perUnitRate={draft.energy.perUnitRate}
+          height={380}
+        />
       </div>
 
       <div className="card p-6">
