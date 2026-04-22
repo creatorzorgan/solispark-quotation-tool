@@ -45,16 +45,18 @@ const publicUrl = (p) => `${BASE}${p}`;
 const SIGNATURE_URL = publicUrl('SYSTEM EQUIPMENTS/Signature conv 1/Signature conv 1.jpeg');
 let SIGNATURE_DATA_URL = null;
 
-// Universal closing page in /public — every quotation ends with the same
-// designed last page so branding is constant across every generated PDF. The
-// historical first-page insert was retired when the dynamic cover absorbed
-// that role in the new assembly sequence.
+// Universal bookend pages in /public — every quotation starts with the first
+// and ends with the last so branding is constant across every generated PDF.
+// The first page is a fully designed static cover supplied by the brand team;
+// there is NO dynamic cover option. Any future "dynamic cover" idea must be
+// rejected — those details belong on subsequent pages.
+const FIRST_PAGE_URL = publicUrl('quotation-page-first.pdf');
 const LAST_PAGE_URL = publicUrl('quotation-page-last.pdf');
 
 // Newly-designed static marketing inserts interleaved with the dynamic pages
-// at PDF assembly time. The sequence (cover → about-us → cover letter →
+// at PDF assembly time. Full sequence: first-page → about-us → cover letter →
 // why-solar → energy/specs → commercial/ROI → services → scope → how-it-works
-// → terms → datasheets → last page) is enforced by the final assembly block.
+// → terms → datasheets → last page. Enforced by the final assembly block.
 const ABOUT_US_URL = publicUrl('about-us.pdf');
 const WHY_SOLAR_URL = publicUrl('why-solar.pdf');
 const SERVICES_URL = publicUrl('services.pdf');
@@ -464,41 +466,18 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
     }
   }
 
-  // ── SECTION: Cover ───────────────────────────────────────────────────────
-  beginSection('cover');
-  let y = 55;
-  centeredText(doc, co.name.toUpperCase(), y, 12, NAVY, 'bold');
-  y += 7;
-  centeredText(doc, co.tagline, y, 9, GOLD_DARK, 'normal');
-  y += 20;
-
-  centeredText(doc, 'Solar Energy', y, 34, NAVY, 'bold');
-  y += 16;
-  centeredText(doc, 'Proposal', y, 34, GOLD, 'bold');
-  y += 12;
-  doc.setDrawColor(...GOLD);
-  doc.setLineWidth(1);
-  doc.line(PW / 2 - 30, y, PW / 2 + 30, y);
-  y += 14;
-
-  centeredText(doc, 'Prepared Exclusively For', y, 10, GRAY, 'normal');
-  y += 10;
-  centeredText(doc, c.fullName, y, 18, NAVY, 'bold');
-  y += 8;
-  if (c.address) {
-    centeredText(doc, c.address, y, 9, GRAY, 'normal');
-    y += 10;
-  }
-  y += 6;
-  centeredText(doc, `Reference: ${refNum}`, y, 9, GOLD_DARK, 'bold');
-  y += 6;
-  centeredText(doc, `Date: ${formatDate(q.createdAt || new Date().toISOString())}`, y, 9, GRAY);
-  endSection('cover');
+  // NOTE: There is no dynamic cover page. The proposal always opens with the
+  // static `quotation-page-first.pdf` supplied by the design team — it's
+  // stitched in as the very first page during final assembly below. Do NOT
+  // re-introduce a jsPDF-rendered cover here: the brand wants the first
+  // impression to be a fixed, designed artefact, not something the tool
+  // composes on the fly.
 
   // ── SECTION: Cover Letter (roof snapshot inline) ─────────────────────────
-  doc.addPage();
+  // jsPDF auto-creates page 1 on construction, so the cover letter lands
+  // directly on it — no `doc.addPage()` needed here.
   beginSection('coverLetter');
-  y = TOP + 6;
+  let y = TOP + 6;
 
   // Date (right-aligned)
   const letterDate = formatDate(q.createdAt || new Date().toISOString());
@@ -1157,7 +1136,7 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
   // Interleave the dynamic sections (stamped with the Solispark letterhead)
   // with the four static marketing PDFs in this exact order:
   //
-  //   1.  Cover Page                              (dynamic)
+  //   1.  Cover Page — quotation-page-first.pdf   (static — the only cover)
   //   2.  About Our Company — about-us.pdf        (static + dynamic client-name overlay)
   //   3.  Cover Letter & Roof Snapshot            (dynamic)
   //   4.  Why Choose Solar? — why-solar.pdf       (static)
@@ -1239,8 +1218,9 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
     }
   };
 
-  // 1. Cover (dynamic)
-  await copySection('cover');
+  // 1. Universal first page (static — quotation-page-first.pdf). This is the
+  //    ONLY valid cover page; there is no dynamic fallback.
+  await safeAppendStatic(FIRST_PAGE_URL, 'quotation-page-first');
 
   // 2. About Our Company (static + client-name overlay)
   await safeAppendStatic(ABOUT_US_URL, 'about-us', aboutOverlayFn);
