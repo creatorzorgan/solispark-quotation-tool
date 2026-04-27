@@ -234,3 +234,54 @@ export const MOUNTING_OPTIONS = [
 export const BATTERY_OPTIONS = ['None', 'Deye 5.3kWh', 'PowerOne 5.3kWh', 'Custom'];
 
 export const STATUS_OPTIONS = ['Draft', 'Sent', 'Accepted', 'Expired'];
+
+// ─── Bill of Quantities (BoQ) — System Equipment Schedule ────────────────────
+// Drives the "SRTPV System BoQ & Scope of Work" page in the PDF and the
+// editable BoQ table in Step 3 of the wizard. Defaults mirror the standard
+// Solispark scope sheet; every row is fully editable in the wizard.
+export const BOQ_SECTION_OPTIONS = [
+  'Module',
+  'Inverter',
+  'Inverter/ACDB to LT Panel',
+  'Inverter to ACDB',
+  'Protection',
+  'Safety',
+  'General',
+];
+
+export const BOQ_UOM_OPTIONS = ['Nos', 'L/s', 'Set', 'No', 'Mtr', 'Lot'];
+
+export const BOQ_MAKE_OPTIONS = [
+  'Adani',
+  'Axitec',
+  'Waaree',
+  'Panasonic',
+  'Rayzon Solar',
+  'Solispark',
+  'Siechem/Polycab',
+  'Staubli',
+  'Deye',
+  'Solis',
+  'Sungrow',
+  'RR/Polycab',
+  'Polycab',
+  'True Power',
+  'Standard',
+];
+
+export const DEFAULT_BOQ_ITEMS = [
+  { description: 'Solar PV MODULE – 610Wp TOPCon', section: 'Module', qty: '5', uom: 'Nos', make: 'Adani' },
+  { description: 'Copper Cable, 1CX6Sqmm Solar UV resistance', section: 'Module', qty: '1', uom: 'L/s', make: 'Siechem/Polycab' },
+  { description: 'MC4 Connector +/-Ve – for 4/6 Sqmm', section: 'Module', qty: '1', uom: 'L/s', make: 'Staubli' },
+  { description: 'DC Distribution Box – IP 65 - Outdoor', section: 'Module', qty: '1', uom: 'L/s', make: 'Solispark' },
+  { description: 'Inverter 3 kw -3Phase – IP65 - Outdoor', section: 'Inverter', qty: '1', uom: 'Nos', make: 'Deye' },
+  { description: 'AC Distribution Box – 1in 1out – of Indoor Type', section: 'Inverter', qty: '1', uom: 'L/s', make: 'Solispark' },
+  { description: 'Aluminium Armoured Cable: 4 Core 6Sqmm - XLPE', section: 'Inverter/ACDB to LT Panel', qty: 'As per site requirement', uom: 'L/s', make: 'RR/Polycab' },
+  { description: '4Cx 6Sq mm Copper flexi cable', section: 'Inverter to ACDB', qty: '1', uom: 'L/s', make: 'RR/Polycab' },
+  { description: 'Earthing cable 16sqmm Copper', section: 'Protection', qty: 'As per site requirement', uom: 'Set', make: 'Polycab' },
+  { description: 'Plant Earthing 2mtrs with chamber', section: 'Safety', qty: '3', uom: 'Set', make: 'True Power' },
+  { description: 'Lightning Arrestor- ESE', section: 'Safety', qty: '1', uom: 'No', make: 'True Power' },
+  { description: 'C-class item (hardware, pipes, cable ties)', section: 'General', qty: '1', uom: 'L/s', make: 'Standard' },
+  { description: 'Plant Marking, Cable Markers and sign Boards', section: 'General', qty: '1', uom: 'L/s', make: 'Standard' },
+  { description: 'Miscellaneous items for I&C of the Power Plant', section: 'General', qty: '1', uom: 'L/s', make: 'Standard' },
+];

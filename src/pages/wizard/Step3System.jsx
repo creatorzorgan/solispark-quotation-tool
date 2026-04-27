@@ -1,9 +1,16 @@
 import React from 'react';
 import { Combobox, Field } from '../../components/ui.jsx';
-import { MOUNTING_OPTIONS, BATTERY_OPTIONS } from '../../data/defaultConfig.js';
+import {
+  MOUNTING_OPTIONS,
+  BATTERY_OPTIONS,
+  DEFAULT_BOQ_ITEMS,
+  BOQ_SECTION_OPTIONS,
+  BOQ_UOM_OPTIONS,
+  BOQ_MAKE_OPTIONS,
+} from '../../data/defaultConfig.js';
 import { panelCountFor, fitsOnRoof } from '../../utils/calculations.js';
 import { formatKw, formatNumber } from '../../utils/format.js';
-import { Zap, AlertTriangle, Sparkles } from 'lucide-react';
+import { Zap, AlertTriangle, Sparkles, Plus, Trash2, RotateCcw } from 'lucide-react';
 
 const BATTERY_COSTS = { None: 0, 'Deye 5.3kWh': 280000, 'PowerOne 5.3kWh': 260000, Custom: 0 };
 
@@ -67,6 +74,35 @@ const Step3System = ({ draft, updateSystem, updatePricing, config, suggestSystem
 
   const setBattery = (opt) => {
     updateSystem({ batteryOption: opt, batteryCost: BATTERY_COSTS[opt] || 0 });
+  };
+
+  // ── Bill of Quantities helpers ──────────────────────────────────────────
+  // Older drafts loaded from storage may not have boqItems; fall back to the
+  // factory defaults so the table is never empty for existing quotations.
+  const boqItems = Array.isArray(s.boqItems) && s.boqItems.length > 0
+    ? s.boqItems
+    : DEFAULT_BOQ_ITEMS.map((it) => ({ ...it }));
+
+  const setBoqItems = (next) => updateSystem({ boqItems: next });
+
+  const updateBoqRow = (idx, patch) => {
+    const next = boqItems.map((row, i) => (i === idx ? { ...row, ...patch } : row));
+    setBoqItems(next);
+  };
+
+  const addBoqRow = () => {
+    setBoqItems([
+      ...boqItems,
+      { description: '', section: 'General', qty: '1', uom: 'L/s', make: 'Standard' },
+    ]);
+  };
+
+  const removeBoqRow = (idx) => {
+    setBoqItems(boqItems.filter((_, i) => i !== idx));
+  };
+
+  const resetBoq = () => {
+    setBoqItems(DEFAULT_BOQ_ITEMS.map((it) => ({ ...it })));
   };
 
   return (
@@ -190,6 +226,111 @@ const Step3System = ({ draft, updateSystem, updatePricing, config, suggestSystem
             </span>
           </label>
         </Field>
+      </div>
+
+      {/* ─── SRTPV System BoQ & Scope of Work ───────────────────────────── */}
+      <div className="mt-10">
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-1">
+          <h3 className="font-heading text-xl font-bold text-navy-dark">
+            SRTPV System BoQ &amp; Scope of Work
+          </h3>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={resetBoq}
+              className="btn-ghost text-xs"
+              title="Restore the standard 14-item BoQ"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Reset Defaults
+            </button>
+            <button
+              type="button"
+              onClick={addBoqRow}
+              className="btn-outline text-xs"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add Row
+            </button>
+          </div>
+        </div>
+        <p className="text-cream-600 text-sm mb-4">
+          Editable equipment schedule that prints on the System Specifications page of the proposal. Pick from the dropdowns or type your own.
+        </p>
+
+        <div className="overflow-x-auto border border-cream-200 rounded-md">
+          <table className="w-full text-sm">
+            <thead className="bg-navy-dark text-white">
+              <tr>
+                <th className="px-2 py-2 text-left w-10">Sl.</th>
+                <th className="px-2 py-2 text-left">Description</th>
+                <th className="px-2 py-2 text-left w-44">Section</th>
+                <th className="px-2 py-2 text-left w-32">Qty</th>
+                <th className="px-2 py-2 text-left w-24">UOM</th>
+                <th className="px-2 py-2 text-left w-40">Make</th>
+                <th className="px-2 py-2 w-10"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {boqItems.map((row, idx) => (
+                <tr key={idx} className={idx % 2 ? 'bg-cream-50' : 'bg-white'}>
+                  <td className="px-2 py-1 text-cream-600 font-bold">{idx + 1}</td>
+                  <td className="px-2 py-1">
+                    <input
+                      type="text"
+                      className="input text-xs py-1.5"
+                      value={row.description}
+                      onChange={(e) => updateBoqRow(idx, { description: e.target.value })}
+                    />
+                  </td>
+                  <td className="px-2 py-1">
+                    <Combobox
+                      id={`boq-section-${idx}`}
+                      value={row.section}
+                      onChange={(v) => updateBoqRow(idx, { section: v })}
+                      options={BOQ_SECTION_OPTIONS}
+                      className="input text-xs py-1.5"
+                    />
+                  </td>
+                  <td className="px-2 py-1">
+                    <input
+                      type="text"
+                      className="input text-xs py-1.5"
+                      value={row.qty}
+                      onChange={(e) => updateBoqRow(idx, { qty: e.target.value })}
+                    />
+                  </td>
+                  <td className="px-2 py-1">
+                    <Combobox
+                      id={`boq-uom-${idx}`}
+                      value={row.uom}
+                      onChange={(v) => updateBoqRow(idx, { uom: v })}
+                      options={BOQ_UOM_OPTIONS}
+                      className="input text-xs py-1.5"
+                    />
+                  </td>
+                  <td className="px-2 py-1">
+                    <Combobox
+                      id={`boq-make-${idx}`}
+                      value={row.make}
+                      onChange={(v) => updateBoqRow(idx, { make: v })}
+                      options={BOQ_MAKE_OPTIONS}
+                      className="input text-xs py-1.5"
+                    />
+                  </td>
+                  <td className="px-2 py-1 text-center">
+                    <button
+                      type="button"
+                      onClick={() => removeBoqRow(idx)}
+                      className="text-rose-600 hover:text-rose-800"
+                      title="Remove row"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="mt-6 p-5 bg-navy-dark text-white rounded-md flex items-center gap-4 flex-wrap">

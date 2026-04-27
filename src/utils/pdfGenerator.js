@@ -8,6 +8,7 @@ import 'jspdf-autotable';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { formatINR, formatDate, formatNumber, formatKw, formatKwh } from './format.js';
 import { captureSavingsChart } from './captureChart.jsx';
+import { DEFAULT_BOQ_ITEMS } from '../data/defaultConfig.js';
 
 // jsPDF's default Helvetica has no glyph for `₹` (U+20B9) — it renders as
 // a garbage character. We substitute `Rs.` for any currency output inside
@@ -141,38 +142,6 @@ const para = (doc, text, y, opts = {}) => {
   const lines = doc.splitTextToSize(text, maxWidth);
   doc.text(lines, M, y);
   return y + lines.length * lineHeight + 1;
-};
-
-// Convert a number of rupees to Indian-style words (approximate, capitalised
-// for the "Total Basic Price ... Only" row on the commercial offer).
-const rupeesInWords = (n) => {
-  if (!n || n <= 0) return 'Zero';
-  const one = [
-    '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
-    'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
-    'Seventeen', 'Eighteen', 'Nineteen',
-  ];
-  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-  const two = (num) => {
-    if (num < 20) return one[num];
-    return tens[Math.floor(num / 10)] + (num % 10 ? '-' + one[num % 10] : '');
-  };
-  const three = (num) => {
-    const h = Math.floor(num / 100);
-    const rest = num % 100;
-    return (h ? one[h] + ' Hundred' + (rest ? ' ' : '') : '') + (rest ? two(rest) : '');
-  };
-  let num = Math.floor(n);
-  const parts = [];
-  const crore = Math.floor(num / 10000000); num %= 10000000;
-  const lakh = Math.floor(num / 100000);   num %= 100000;
-  const thousand = Math.floor(num / 1000); num %= 1000;
-  const hundred = num;
-  if (crore) parts.push(three(crore) + ' Crore');
-  if (lakh) parts.push(two(lakh) + ' Lakh');
-  if (thousand) parts.push(two(thousand) + ' Thousand');
-  if (hundred) parts.push(three(hundred));
-  return parts.join(' ');
 };
 
 // ─── Roof snapshot renderer ──────────────────────────────────────────────────
@@ -720,36 +689,48 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
   }
   endSection('energy');
 
-  // ── SECTION: System Specifications ───────────────────────────────────────
+  // ── SECTION: System Specifications (SRTPV BoQ & Scope of Work) ───────────
   doc.addPage();
   beginSection('systemSpecs');
   y = TOP + 4;
-  y = sectionHead(doc, 'System Design & Specifications', y);
+  y = sectionHead(doc, 'SRTPV System BoQ & Scope of Work', y);
   y += 2;
+
+  // Editable Bill of Quantities — rendered straight from draft.system.boqItems.
+  // Older drafts that pre-date the schema fall back to the factory defaults so
+  // we never produce an empty table.
+  const boqRows = (Array.isArray(s.boqItems) && s.boqItems.length > 0
+    ? s.boqItems
+    : DEFAULT_BOQ_ITEMS
+  ).map((it, i) => [
+    String(i + 1),
+    it.description || '',
+    it.section || '',
+    String(it.qty ?? ''),
+    it.uom || '',
+    it.make || '',
+  ]);
 
   doc.autoTable({
     startY: y,
     margin: { left: M, right: M },
-    head: [['Components', 'Make']],
-    body: [
-      ['Solar Panels', `${s.panelCount} × ${panel.brand || ''} ${panel.model || ''} (${s.panelWattage}W each)`],
-      ['Inverter', `${inverter.brand || ''} ${s.inverterCapacityKw} kW`],
-      ['Mounting Structure', s.mounting],
-      ['Electrical & Wiring', 'AC/DC wiring, ACDB/DCDB, earthing'],
-      ['Net Metering', s.netMetering ? `Included (${discomName} application filed by Solispark)` : 'Not included'],
-      ['Battery Backup', s.batteryOption === 'None' ? 'Not included' : s.batteryOption],
-    ],
-    headStyles: { fillColor: NAVY, textColor: WHITE, fontSize: 10, fontStyle: 'bold', halign: 'left' },
-    bodyStyles: { textColor: NAVY, fontSize: 10, cellPadding: 5 },
+    head: [['Sl. No', 'Description', 'Section', 'Qty', 'UOM', 'Make']],
+    body: boqRows,
+    headStyles: { fillColor: GOLD, textColor: NAVY, fontSize: 9, fontStyle: 'bold', halign: 'center' },
+    bodyStyles: { textColor: NAVY, fontSize: 8.5, cellPadding: 2.5, valign: 'middle' },
     columnStyles: {
-      0: { fontStyle: 'bold', cellWidth: 55 },
-      1: { cellWidth: 'auto' },
+      0: { halign: 'center', cellWidth: 12 },
+      1: { cellWidth: 65 },
+      2: { halign: 'center', cellWidth: 32 },
+      3: { halign: 'center', cellWidth: 22 },
+      4: { halign: 'center', cellWidth: 14 },
+      5: { halign: 'center', cellWidth: 'auto' },
     },
     alternateRowStyles: { fillColor: OFF_WHITE },
-    styles: { lineWidth: 0.1, lineColor: LIGHT_GRAY },
+    styles: { lineWidth: 0.1, lineColor: GRAY },
   });
 
-  y = doc.lastAutoTable.finalY + 10;
+  y = doc.lastAutoTable.finalY + 8;
   leftText(doc, 'Total System Capacity: ' + formatKw(s.systemSizeKw), M, y, 11, NAVY, 'bold');
   y += 6;
   leftText(doc, `Estimated monthly generation: ${formatKwh(computed?.roi?.monthlyGenKwh || 0)}`, M, y, 9, GRAY);
@@ -778,10 +759,6 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
   const discomFee = computed?.discomCharges ?? 0;
   const basicPrice = systemPrice + discomFee;
 
-  const panelLabel = panel.brand
-    ? `For ${String(panel.brand).toUpperCase()} ${panel.wattage || s.panelWattage}Wp ${panel.model ? panel.model : ''} for ${s.systemSizeKw} kW`
-    : `For ${s.systemSizeKw} kW`;
-
   doc.autoTable({
     startY: y,
     margin: { left: M, right: M },
@@ -803,11 +780,14 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
       ],
       [
         {
-          content: `Total Basic Price  Rs. ${rupeesInWords(basicPrice)} Only  ( ${panelLabel} )`,
+          content: 'Total Basic Price',
           colSpan: 4,
-          styles: { fontStyle: 'bold', fillColor: [...GOLD_DARK, 0], textColor: NAVY },
+          styles: { fontStyle: 'bold', fillColor: GOLD, textColor: NAVY, halign: 'left' },
         },
-        { content: formatNumber(basicPrice), styles: { fontStyle: 'bold', halign: 'right' } },
+        {
+          content: formatNumber(basicPrice),
+          styles: { fontStyle: 'bold', halign: 'right', fillColor: GOLD, textColor: NAVY },
+        },
       ],
     ],
     headStyles: { fillColor: GOLD, textColor: NAVY, fontSize: 9, fontStyle: 'bold', halign: 'center' },
@@ -823,7 +803,67 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
 
   y = doc.lastAutoTable.finalY + 8;
 
-  // Subsidy / GST / Grand total summary
+  // ── PM Surya Ghar Yojana subsidy notice + DCR effective-price table ─────
+  // Mirrors the layout of the Col. Renukanth reference proposal. Header band
+  // is yellow (NOT navy) to match the "yellow alone" colour direction.
+  {
+    leftText(
+      doc,
+      'NOTE: PM SURYA GHAR YOJANA solar subsidy program implies agreement to the following terms:',
+      M, y, 9, NAVY, 'bold', CW
+    );
+    y += 6;
+    y = para(
+      doc,
+      'Subsidies are fixed at Rs. 30,000 for 1kW systems, Rs. 60,000 for 2kW systems, and Rs. 78,000 for 3kW and above, valid up to 10kW systems and could vary depending on the time of application. Eligibility is subject to adherence to program guidelines. Any misinformation provided may result in disqualification. Participants are responsible for any additional costs incurred beyond the subsidized amount.',
+      y,
+      { size: 9, lineHeight: 4.6 }
+    );
+    y += 4;
+
+    // Compute effective price for the DCR row exactly like the reference PDF:
+    //   Total Effective Price = (Basic Price) - (Government Subsidy)
+    const effectiveSubsidy = computed?.subsidy || 0;
+    const effectivePrice = Math.max(0, basicPrice - effectiveSubsidy);
+    const panelMakeUpper = String(panel.brand || '').toUpperCase() || 'ADANI';
+    const panelWp = panel.wattage || s.panelWattage;
+    const dcrRowLabel = `For ${panelMakeUpper} ${panelWp}Wp DCR N type TopCon`;
+    const dcrRowValue = effectiveSubsidy > 0
+      ? `Rs. ${formatNumber(basicPrice)} - Rs. ${formatNumber(effectiveSubsidy)} (Subsidy) = Rs. ${formatNumber(effectivePrice)}`
+      : `Rs. ${formatNumber(effectivePrice)}`;
+
+    doc.autoTable({
+      startY: y,
+      margin: { left: M, right: M },
+      head: [
+        [{ content: 'PRICE FOR SRTPV UNDER PM SURYA GHAR YOGANA (DCR PANELS)', colSpan: 2, styles: { halign: 'center' } }],
+        ['', { content: 'Total Effective Price', styles: { halign: 'left', fillColor: WHITE, textColor: NAVY } }],
+      ],
+      body: [
+        [
+          { content: dcrRowLabel, styles: { fontStyle: 'bold' } },
+          { content: dcrRowValue, styles: { fontStyle: 'bold' } },
+        ],
+      ],
+      headStyles: { fillColor: GOLD, textColor: NAVY, fontSize: 10, fontStyle: 'bold' },
+      bodyStyles: { textColor: NAVY, fontSize: 9.5, cellPadding: 4, valign: 'middle' },
+      columnStyles: {
+        0: { cellWidth: CW * 0.5 },
+        1: { cellWidth: CW * 0.5 },
+      },
+      styles: { lineWidth: 0.2, lineColor: GRAY },
+    });
+
+    y = doc.lastAutoTable.finalY + 8;
+  }
+
+  // Subsidy / GST / Grand total summary. With the new PM Surya Ghar block
+  // above, the commercial offer can spill close to the footer — guard the
+  // totals so they always land cleanly on the same page they belong to.
+  if (y > BOTTOM - 40) {
+    doc.addPage();
+    y = TOP + 4;
+  }
   if ((computed?.subsidy || 0) > 0) {
     leftText(doc, 'Government Subsidy (PM Surya Ghar Muft Bijli Yojana)', M + CW / 2 - 40, y, 10, GRAY);
     rightText(doc, `- ${formatRs(computed.subsidy)}`, PW - M, y, 11, NAVY, 'bold');
