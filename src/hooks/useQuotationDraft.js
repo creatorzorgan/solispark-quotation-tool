@@ -13,6 +13,7 @@ import {
   pickInverter,
   recommendSystemSize,
 } from '../utils/calculations.js';
+import { DEFAULT_BOQ_ITEMS } from '../data/defaultConfig.js';
 
 export const createEmptyQuotation = (config) => ({
   id: null,
@@ -63,6 +64,10 @@ export const createEmptyQuotation = (config) => ({
     batteryOption: 'None',
     batteryCost: 0,
     netMetering: true,
+    // Editable Bill of Quantities — drives the "SRTPV System BoQ & Scope of
+    // Work" page in the PDF. Each entry: { description, section, qty, uom, make }.
+    // qty is a string so site-driven entries like "As per site requirement" work.
+    boqItems: DEFAULT_BOQ_ITEMS.map((it) => ({ ...it })),
   },
   pricing: {
     pricePerPanel: config.pricing_defaults.panels.axitec_545w.price_per_panel,

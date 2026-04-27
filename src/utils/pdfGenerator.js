@@ -5,9 +5,10 @@
 
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { formatINR, formatDate, formatNumber, formatKw, formatKwh } from './format.js';
 import { captureSavingsChart } from './captureChart.jsx';
+import { DEFAULT_BOQ_ITEMS } from '../data/defaultConfig.js';
 
 // jsPDF's default Helvetica has no glyph for `₹` (U+20B9) — it renders as
 // a garbage character. We substitute `Rs.` for any currency output inside
@@ -46,9 +47,25 @@ const SIGNATURE_URL = publicUrl('SYSTEM EQUIPMENTS/Signature conv 1/Signature co
 let SIGNATURE_DATA_URL = null;
 
 // Universal bookend pages in /public — every quotation starts with the first
-// and ends with the last, so branding is constant across every generated PDF.
+// and ends with the last so branding is constant across every generated PDF.
+// The first page is a fully designed static cover supplied by the brand team;
+// there is NO dynamic cover option. Any future "dynamic cover" idea must be
+// rejected — those details belong on subsequent pages.
 const FIRST_PAGE_URL = publicUrl('quotation-page-first.pdf');
 const LAST_PAGE_URL = publicUrl('quotation-page-last.pdf');
+
+// Newly-designed static marketing inserts interleaved with the dynamic pages
+// at PDF assembly time. Full sequence: first-page → about-us → cover letter →
+// why-solar → energy/specs → commercial/ROI → services → scope → how-it-works
+// → terms → datasheets → last page. Enforced by the final assembly block.
+const ABOUT_US_URL = publicUrl('about-us.pdf');
+const WHY_SOLAR_URL = publicUrl('why-solar.pdf');
+const SERVICES_URL = publicUrl('services.pdf');
+const HOW_IT_WORKS_URL = publicUrl('how-it-works.pdf');
+
+// Deep-navy brand colour used for the dynamic text overlay on about-us.pdf.
+// Mirrors #0A192F from the UI.
+const OVERLAY_NAVY = rgb(10 / 255, 25 / 255, 47 / 255);
 
 // Letterhead watermark PDF — stamped behind every quotation page. Lives in
 // /public so it can be swapped without a rebuild. Cached in module scope.
@@ -125,43 +142,6 @@ const para = (doc, text, y, opts = {}) => {
   const lines = doc.splitTextToSize(text, maxWidth);
   doc.text(lines, M, y);
   return y + lines.length * lineHeight + 1;
-};
-
-// Convert a number of rupees to Indian-style words (approximate, capitalised
-// for the "Total Basic Price ... Only" row on the commercial offer).
-const rupeesInWords = (n) => {
-  if (!n || n <= 0) return 'Zero';
-  const one = [
-    '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
-    'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
-    'Seventeen', 'Eighteen', 'Nineteen',
-  ];
-  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-  const two = (num) => {
-    if (num < 20) return one[num];
-    return tens[Math.floor(num / 10)] + (num % 10 ? '-' + one[num % 10] : '');
-  };
-  const three = (num) => {
-    const h = Math.floor(num / 100);
-    const rest = num % 100;
-    return (h ? one[h] + ' Hundred' + (rest ? ' ' : '') : '') + (rest ? two(rest) : '');
-  };
-  let num = Math.floor(n);
-  const parts = [];
-  const crore = Math.floor(num / 10000000); num %= 10000000;
-  const lakh = Math.floor(num / 100000);   num %= 100000;
-  const thousand = Math.floor(num / 1000); num %= 1000;
-  const hundred = num;
-  if (crore) parts.push(three(crore) + ' Crore');
-  if (lakh) parts.push(two(lakh) + ' Lakh');
-  if (thousand) parts.push(two(thousand) + ' Thousand');
-  if (hundred) parts.push(three(hundred));
-  return parts.join(' ');
-};
-
-// Page number — small, unobtrusive (footer area belongs to letterhead)
-const pageNum = (doc, num, total) => {
-  rightText(doc, `${num} / ${total}`, PW - M, BOTTOM + 4, 7, GRAY);
 };
 
 // ─── Roof snapshot renderer ──────────────────────────────────────────────────
@@ -342,6 +322,53 @@ async function appendStaticPdf(finalDoc, url, label) {
   return true;
 }
 
+// Same as appendStaticPdf, but runs `overlayFn(page, font)` on the first page
+// after it's added to finalDoc. Used to stamp the personalised greeting onto
+// the about-us.pdf cover at exact print-quality coordinates.
+async function appendStaticPdfWithOverlay(finalDoc, url, label, overlayFn) {
+  const res = await fetch(encodeURI(url));
+  if (!res.ok) {
+    throw new Error(
+      `[pdf] ${label} fetch failed (${res.status} ${res.statusText}) — tried: ${url}`
+    );
+  }
+  const bytes = await res.arrayBuffer();
+  const srcDoc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  const copied = await finalDoc.copyPages(srcDoc, srcDoc.getPageIndices());
+  copied.forEach((page, idx) => {
+    const addedPage = finalDoc.addPage(page);
+    if (idx === 0 && typeof overlayFn === 'function') {
+      overlayFn(addedPage);
+    }
+  });
+  return true;
+}
+
+// Letterhead-stamp every page of a jsPDF-generated content buffer into a
+// standalone pdf-lib document, WITHOUT adding anything to the final doc. We
+// later cherry-pick ranges of pages out of this standalone doc and interleave
+// them with the static marketing PDFs. Returns the standalone document.
+async function stampContentToStandaloneDoc(contentBytes) {
+  const letterheadBytes = await loadLetterheadBytes();
+  const letterheadSource = await PDFDocument.load(letterheadBytes);
+  const contentDoc = await PDFDocument.load(contentBytes);
+
+  const output = await PDFDocument.create();
+  const [letterheadTemplate] = await output.embedPdf(letterheadSource, [0]);
+
+  const pages = contentDoc.getPages();
+  for (let i = 0; i < pages.length; i++) {
+    const { width, height } = pages[i].getSize();
+    const newPage = output.addPage([width, height]);
+    // Letterhead in the background
+    newPage.drawPage(letterheadTemplate, { x: 0, y: 0, width, height });
+    // Content on top
+    const [contentEmbed] = await output.embedPdf(contentDoc, [i]);
+    newPage.drawPage(contentEmbed, { x: 0, y: 0, width, height });
+  }
+  return output;
+}
+
 // ─── Main generator ──────────────────────────────────────────────────────────
 export const generatePdf = async ({ quotation: q, computed, config }) => {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -364,8 +391,20 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
     e.customProviderName ||
     config.electricity_providers[e.provider]?.name ||
     'BESCOM';
-  const totalPages = 11;
   const refNum = q.referenceNumber || 'SP-2026-XXXX';
+
+  // Dynamic-section page ranges inside the jsPDF content doc (1-indexed,
+  // inclusive). Filled in as each section renders so the final assembly can
+  // cherry-pick page ranges and interleave them with the static marketing
+  // PDFs in the exact order the proposal demands. `sectionStart` is reset
+  // at each section boundary via beginSection().
+  const sections = {};
+  const beginSection = (name) => {
+    sections[name] = { start: doc.internal.getNumberOfPages() };
+  };
+  const endSection = (name) => {
+    sections[name].end = doc.internal.getNumberOfPages();
+  };
 
   // Load signature up-front (awaited, used on terms page)
   const signature = await loadSignature();
@@ -396,38 +435,18 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
     }
   }
 
-  // ── PAGE 1: Cover ────────────────────────────────────────────────────────
-  let y = 55;
-  centeredText(doc, co.name.toUpperCase(), y, 12, NAVY, 'bold');
-  y += 7;
-  centeredText(doc, co.tagline, y, 9, GOLD_DARK, 'normal');
-  y += 20;
+  // NOTE: There is no dynamic cover page. The proposal always opens with the
+  // static `quotation-page-first.pdf` supplied by the design team — it's
+  // stitched in as the very first page during final assembly below. Do NOT
+  // re-introduce a jsPDF-rendered cover here: the brand wants the first
+  // impression to be a fixed, designed artefact, not something the tool
+  // composes on the fly.
 
-  centeredText(doc, 'Solar Energy', y, 34, NAVY, 'bold');
-  y += 16;
-  centeredText(doc, 'Proposal', y, 34, GOLD, 'bold');
-  y += 12;
-  doc.setDrawColor(...GOLD);
-  doc.setLineWidth(1);
-  doc.line(PW / 2 - 30, y, PW / 2 + 30, y);
-  y += 14;
-
-  centeredText(doc, 'Prepared Exclusively For', y, 10, GRAY, 'normal');
-  y += 10;
-  centeredText(doc, c.fullName, y, 18, NAVY, 'bold');
-  y += 8;
-  if (c.address) {
-    centeredText(doc, c.address, y, 9, GRAY, 'normal');
-    y += 10;
-  }
-  y += 6;
-  centeredText(doc, `Reference: ${refNum}`, y, 9, GOLD_DARK, 'bold');
-  y += 6;
-  centeredText(doc, `Date: ${formatDate(q.createdAt || new Date().toISOString())}`, y, 9, GRAY);
-
-  // ── PAGE 2: Cover Letter ─────────────────────────────────────────────────
-  doc.addPage();
-  y = TOP + 6;
+  // ── SECTION: Cover Letter (roof snapshot inline) ─────────────────────────
+  // jsPDF auto-creates page 1 on construction, so the cover letter lands
+  // directly on it — no `doc.addPage()` needed here.
+  beginSection('coverLetter');
+  let y = TOP + 6;
 
   // Date (right-aligned)
   const letterDate = formatDate(q.createdAt || new Date().toISOString());
@@ -490,7 +509,6 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
   // paragraphs. Instead, if the remaining letter body won't fit below the
   // image on the same page, we flush to a fresh letterhead page and continue
   // the closing there. That way the sales team's capture is NEVER dropped.
-  let coverLetterOverflowed = false;
   if (roofSprite) {
     // 95mm wide fits comfortably between the margins and keeps the aspect
     // readable. For a typical 4:3 map capture that's ~71mm tall.
@@ -515,15 +533,13 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
       console.warn('[pdf] roof sprite embed failed:', err);
     }
 
-    // If the image pushed us near the footer, stamp page 2, then continue the
-    // closing paragraphs on a fresh page so nothing gets clipped. The downstream
-    // pageNum(doc, 2, ...) call is skipped via the overflow flag to avoid a
-    // double stamp.
+    // If the image pushed us near the footer, continue the closing paragraphs
+    // on a fresh page so nothing gets clipped. Both the original cover-letter
+    // page AND the overflow page get copied into the coverLetter section at
+    // assembly time, so we don't need to track the split separately.
     if (y > BOTTOM - 70) {
-      pageNum(doc, 2, totalPages);
       doc.addPage();
       y = TOP + 6;
-      coverLetterOverflowed = true;
     }
   }
 
@@ -581,65 +597,15 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
   leftText(doc, 'Ranveer Dorai / Pruthvik Hariprasad', M, y, 10, NAVY, 'bold');
   y += 5;
   leftText(doc, 'Director', M, y, 9, GRAY);
+  endSection('coverLetter');
 
-  // Only stamp the cover-letter page number here if we didn't already stamp it
-  // on the first cover-letter page before overflowing the closing block.
-  if (!coverLetterOverflowed) {
-    pageNum(doc, 2, totalPages);
-  }
+  // The legacy "About Solispark" dynamic page has been removed. The new
+  // about-us.pdf (with a dynamic client-name overlay) is stitched in at
+  // assembly time immediately after the cover page.
 
-  // ── PAGE 3: About Solispark ──────────────────────────────────────────────
+  // ── SECTION: Energy Assessment ───────────────────────────────────────────
   doc.addPage();
-  y = TOP + 4;
-  y = sectionHead(doc, 'About Solispark Energy', y);
-  y += 4;
-  const aboutText =
-    'Solispark Energy Pvt. Ltd. is a Bengaluru-based solar energy company dedicated to making clean energy accessible, affordable, and beautifully engineered. We specialise in residential, commercial, and industrial solar installations backed by premium components, meticulous engineering, and an unwavering commitment to service excellence.';
-  leftText(doc, aboutText, M, y, 10, NAVY, 'normal', CW);
-  y += 28;
-
-  // Key stats boxes
-  const stats = [
-    { label: 'Projects Delivered', value: co.stats.projects_completed },
-    { label: 'Capacity Deployed', value: co.stats.deployed_capacity_mw + ' MW' },
-    { label: 'Industrial Partners', value: co.stats.industrial_partners },
-    { label: 'Google Rating', value: co.stats.google_rating + ' ★' },
-  ];
-  const statW = (CW - 12) / 4;
-  stats.forEach((st, i) => {
-    const sx = M + i * (statW + 4);
-    rect(doc, sx, y, statW, 22, NAVY);
-    doc.setFontSize(16);
-    doc.setTextColor(...GOLD);
-    doc.setFont(undefined, 'bold');
-    doc.text(st.value, sx + statW / 2, y + 10, { align: 'center' });
-    doc.setFontSize(7);
-    doc.setTextColor(...WHITE);
-    doc.setFont(undefined, 'normal');
-    doc.text(st.label.toUpperCase(), sx + statW / 2, y + 17, { align: 'center' });
-  });
-  y += 30;
-
-  y = sectionHead(doc, 'Certifications & Partnerships', y);
-  y += 2;
-  co.certifications.forEach((cert) => {
-    rect(doc, M, y, 3, 3, GOLD);
-    leftText(doc, cert, M + 7, y + 3, 10, NAVY, 'normal');
-    y += 8;
-  });
-  y += 6;
-
-  y = sectionHead(doc, 'Founded By', y);
-  y += 2;
-  co.founders.forEach((f) => {
-    leftText(doc, f.name, M, y + 3, 11, NAVY, 'bold');
-    leftText(doc, f.title, M + 60, y + 3, 10, GRAY);
-    y += 8;
-  });
-  pageNum(doc, 3, totalPages);
-
-  // ── PAGE 4: Energy Assessment ────────────────────────────────────────────
-  doc.addPage();
+  beginSection('energy');
   y = TOP + 4;
   y = sectionHead(doc, 'Energy Assessment Summary', y);
   y += 4;
@@ -669,44 +635,110 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
     `Based on ${RS} ${formatNumber(e.monthlyBill)} monthly bill at ${RS} ${e.perUnitRate}/kWh with ${config.calculation_constants.peak_sun_hours}h peak sun.`,
     M + 6, y + 25, 8, GRAY
   );
-  pageNum(doc, 4, totalPages);
+  y += 38;
 
-  // ── PAGE 5: System Specifications ────────────────────────────────────────
+  // ── Bill-reduction visual (before vs. after solar) ──────────────────────
+  // A compact horizontal bar comparison the client can read in a glance.
+  // Most residential systems offset the majority of grid consumption; we
+  // compute the post-solar figure from the ROI helper so it reflects the
+  // actual sizing, not a marketing estimate.
+  {
+    const monthlyBill = e.monthlyBill || 0;
+    const monthlyGen = computed?.roi?.monthlyGenKwh || 0;
+    // What the solar system is worth each month at today's tariff, capped at
+    // the current bill (you can't "save" more than you pay).
+    const monthlySolarValue = Math.min(monthlyGen * (e.perUnitRate || 0), monthlyBill);
+    const postSolarBill = Math.max(0, monthlyBill - monthlySolarValue);
+    const pctReduction = monthlyBill > 0 ? Math.round((monthlySolarValue / monthlyBill) * 100) : 0;
+
+    y = sectionHead(doc, 'What This System Does To Your Monthly Bill', y);
+    y += 4;
+
+    const barX = M;
+    const barW = CW;
+    const barH = 10;
+    const labelW = 50;
+    const trackW = barW - labelW - 40;
+
+    // "Today" bar — full length (navy)
+    leftText(doc, 'Today', barX, y + 7, 9, NAVY, 'bold');
+    rect(doc, barX + labelW, y, trackW, barH, LIGHT_GRAY);
+    rect(doc, barX + labelW, y, trackW, barH, NAVY);
+    rightText(doc, formatRs(monthlyBill, { compact: true }) + ' / mo', barX + barW, y + 7, 9, NAVY, 'bold');
+    y += barH + 4;
+
+    // "After solar" bar — proportionally shorter, gold
+    const afterBarW = monthlyBill > 0 ? trackW * (postSolarBill / monthlyBill) : 0;
+    leftText(doc, 'After Solar', barX, y + 7, 9, NAVY, 'bold');
+    rect(doc, barX + labelW, y, trackW, barH, LIGHT_GRAY);
+    if (afterBarW > 0.5) rect(doc, barX + labelW, y, afterBarW, barH, GOLD);
+    rightText(doc, formatRs(postSolarBill, { compact: true }) + ' / mo', barX + barW, y + 7, 9, GOLD_DARK, 'bold');
+    y += barH + 6;
+
+    // Big percentage-reduction callout
+    rect(doc, barX, y, barW, 14, OFF_WHITE);
+    doc.setDrawColor(...GOLD);
+    doc.setLineWidth(0.4);
+    doc.rect(barX, y, barW, 14, 'S');
+    leftText(doc, `Monthly bill reduction`, barX + 6, y + 9, 9, GRAY);
+    doc.setFontSize(16);
+    doc.setTextColor(...GOLD_DARK);
+    doc.setFont(undefined, 'bold');
+    doc.text(`${pctReduction}%`, barX + barW - 6, y + 10, { align: 'right' });
+    y += 18;
+  }
+  endSection('energy');
+
+  // ── SECTION: System Specifications (SRTPV BoQ & Scope of Work) ───────────
   doc.addPage();
+  beginSection('systemSpecs');
   y = TOP + 4;
-  y = sectionHead(doc, 'System Design & Specifications', y);
+  y = sectionHead(doc, 'SRTPV System BoQ & Scope of Work', y);
   y += 2;
+
+  // Editable Bill of Quantities — rendered straight from draft.system.boqItems.
+  // Older drafts that pre-date the schema fall back to the factory defaults so
+  // we never produce an empty table.
+  const boqRows = (Array.isArray(s.boqItems) && s.boqItems.length > 0
+    ? s.boqItems
+    : DEFAULT_BOQ_ITEMS
+  ).map((it, i) => [
+    String(i + 1),
+    it.description || '',
+    it.section || '',
+    String(it.qty ?? ''),
+    it.uom || '',
+    it.make || '',
+  ]);
 
   doc.autoTable({
     startY: y,
     margin: { left: M, right: M },
-    head: [['Components', 'Make']],
-    body: [
-      ['Solar Panels', `${s.panelCount} × ${panel.brand || ''} ${panel.model || ''} (${s.panelWattage}W each)`],
-      ['Inverter', `${inverter.brand || ''} ${s.inverterCapacityKw} kW`],
-      ['Mounting Structure', s.mounting],
-      ['Electrical & Wiring', 'AC/DC wiring, ACDB/DCDB, earthing'],
-      ['Net Metering', s.netMetering ? `Included (${discomName} application filed by Solispark)` : 'Not included'],
-      ['Battery Backup', s.batteryOption === 'None' ? 'Not included' : s.batteryOption],
-    ],
-    headStyles: { fillColor: NAVY, textColor: WHITE, fontSize: 10, fontStyle: 'bold', halign: 'left' },
-    bodyStyles: { textColor: NAVY, fontSize: 10, cellPadding: 5 },
+    head: [['Sl. No', 'Description', 'Section', 'Qty', 'UOM', 'Make']],
+    body: boqRows,
+    headStyles: { fillColor: GOLD, textColor: NAVY, fontSize: 9, fontStyle: 'bold', halign: 'center' },
+    bodyStyles: { textColor: NAVY, fontSize: 8.5, cellPadding: 2.5, valign: 'middle' },
     columnStyles: {
-      0: { fontStyle: 'bold', cellWidth: 55 },
-      1: { cellWidth: 'auto' },
+      0: { halign: 'center', cellWidth: 12 },
+      1: { cellWidth: 65 },
+      2: { halign: 'center', cellWidth: 32 },
+      3: { halign: 'center', cellWidth: 22 },
+      4: { halign: 'center', cellWidth: 14 },
+      5: { halign: 'center', cellWidth: 'auto' },
     },
     alternateRowStyles: { fillColor: OFF_WHITE },
-    styles: { lineWidth: 0.1, lineColor: LIGHT_GRAY },
+    styles: { lineWidth: 0.1, lineColor: GRAY },
   });
 
-  y = doc.lastAutoTable.finalY + 10;
+  y = doc.lastAutoTable.finalY + 8;
   leftText(doc, 'Total System Capacity: ' + formatKw(s.systemSizeKw), M, y, 11, NAVY, 'bold');
   y += 6;
   leftText(doc, `Estimated monthly generation: ${formatKwh(computed?.roi?.monthlyGenKwh || 0)}`, M, y, 9, GRAY);
-  pageNum(doc, 5, totalPages);
+  endSection('systemSpecs');
 
-  // ── PAGE 6: Commercial Offer (simplified) ───────────────────────────────
+  // ── SECTION: Commercial Offer ────────────────────────────────────────────
   doc.addPage();
+  beginSection('commercial');
   y = TOP + 4;
   y = sectionHead(doc, 'Commercial Offer', y);
   y += 2;
@@ -726,10 +758,6 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
   const systemPrice = computed?.systemPrice ?? 0;
   const discomFee = computed?.discomCharges ?? 0;
   const basicPrice = systemPrice + discomFee;
-
-  const panelLabel = panel.brand
-    ? `For ${String(panel.brand).toUpperCase()} ${panel.wattage || s.panelWattage}Wp ${panel.model ? panel.model : ''} for ${s.systemSizeKw} kW`
-    : `For ${s.systemSizeKw} kW`;
 
   doc.autoTable({
     startY: y,
@@ -752,11 +780,14 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
       ],
       [
         {
-          content: `Total Basic Price  Rs. ${rupeesInWords(basicPrice)} Only  ( ${panelLabel} )`,
+          content: 'Total Basic Price',
           colSpan: 4,
-          styles: { fontStyle: 'bold', fillColor: [...GOLD_DARK, 0], textColor: NAVY },
+          styles: { fontStyle: 'bold', fillColor: GOLD, textColor: NAVY, halign: 'left' },
         },
-        { content: formatNumber(basicPrice), styles: { fontStyle: 'bold', halign: 'right' } },
+        {
+          content: formatNumber(basicPrice),
+          styles: { fontStyle: 'bold', halign: 'right', fillColor: GOLD, textColor: NAVY },
+        },
       ],
     ],
     headStyles: { fillColor: GOLD, textColor: NAVY, fontSize: 9, fontStyle: 'bold', halign: 'center' },
@@ -772,7 +803,67 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
 
   y = doc.lastAutoTable.finalY + 8;
 
-  // Subsidy / GST / Grand total summary
+  // ── PM Surya Ghar Yojana subsidy notice + DCR effective-price table ─────
+  // Mirrors the layout of the Col. Renukanth reference proposal. Header band
+  // is yellow (NOT navy) to match the "yellow alone" colour direction.
+  {
+    leftText(
+      doc,
+      'NOTE: PM SURYA GHAR YOJANA solar subsidy program implies agreement to the following terms:',
+      M, y, 9, NAVY, 'bold', CW
+    );
+    y += 6;
+    y = para(
+      doc,
+      'Subsidies are fixed at Rs. 30,000 for 1kW systems, Rs. 60,000 for 2kW systems, and Rs. 78,000 for 3kW and above, valid up to 10kW systems and could vary depending on the time of application. Eligibility is subject to adherence to program guidelines. Any misinformation provided may result in disqualification. Participants are responsible for any additional costs incurred beyond the subsidized amount.',
+      y,
+      { size: 9, lineHeight: 4.6 }
+    );
+    y += 4;
+
+    // Compute effective price for the DCR row exactly like the reference PDF:
+    //   Total Effective Price = (Basic Price) - (Government Subsidy)
+    const effectiveSubsidy = computed?.subsidy || 0;
+    const effectivePrice = Math.max(0, basicPrice - effectiveSubsidy);
+    const panelMakeUpper = String(panel.brand || '').toUpperCase() || 'ADANI';
+    const panelWp = panel.wattage || s.panelWattage;
+    const dcrRowLabel = `For ${panelMakeUpper} ${panelWp}Wp DCR N type TopCon`;
+    const dcrRowValue = effectiveSubsidy > 0
+      ? `Rs. ${formatNumber(basicPrice)} - Rs. ${formatNumber(effectiveSubsidy)} (Subsidy) = Rs. ${formatNumber(effectivePrice)}`
+      : `Rs. ${formatNumber(effectivePrice)}`;
+
+    doc.autoTable({
+      startY: y,
+      margin: { left: M, right: M },
+      head: [
+        [{ content: 'PRICE FOR SRTPV UNDER PM SURYA GHAR YOGANA (DCR PANELS)', colSpan: 2, styles: { halign: 'center' } }],
+        ['', { content: 'Total Effective Price', styles: { halign: 'left', fillColor: WHITE, textColor: NAVY } }],
+      ],
+      body: [
+        [
+          { content: dcrRowLabel, styles: { fontStyle: 'bold' } },
+          { content: dcrRowValue, styles: { fontStyle: 'bold' } },
+        ],
+      ],
+      headStyles: { fillColor: GOLD, textColor: NAVY, fontSize: 10, fontStyle: 'bold' },
+      bodyStyles: { textColor: NAVY, fontSize: 9.5, cellPadding: 4, valign: 'middle' },
+      columnStyles: {
+        0: { cellWidth: CW * 0.5 },
+        1: { cellWidth: CW * 0.5 },
+      },
+      styles: { lineWidth: 0.2, lineColor: GRAY },
+    });
+
+    y = doc.lastAutoTable.finalY + 8;
+  }
+
+  // Subsidy / GST / Grand total summary. With the new PM Surya Ghar block
+  // above, the commercial offer can spill close to the footer — guard the
+  // totals so they always land cleanly on the same page they belong to.
+  if (y > BOTTOM - 40) {
+    doc.addPage();
+    y = TOP + 4;
+  }
   if ((computed?.subsidy || 0) > 0) {
     leftText(doc, 'Government Subsidy (PM Surya Ghar Muft Bijli Yojana)', M + CW / 2 - 40, y, 10, GRAY);
     rightText(doc, `- ${formatRs(computed.subsidy)}`, PW - M, y, 11, NAVY, 'bold');
@@ -785,11 +876,11 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
   y += 10;
   leftText(doc, 'GRAND TOTAL', M + CW / 2 - 40, y, 14, NAVY, 'bold');
   rightText(doc, formatRs(totals.grandTotal), PW - M, y, 16, GOLD_DARK, 'bold');
+  endSection('commercial');
 
-  pageNum(doc, 6, totalPages);
-
-  // ── PAGE 7: ROI & Savings ───────────────────────────────────────────────
+  // ── SECTION: ROI & Savings ───────────────────────────────────────────────
   doc.addPage();
+  beginSection('roi');
   y = TOP + 4;
   y = sectionHead(doc, 'ROI & Savings Projection', y);
   y += 2;
@@ -908,35 +999,15 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
       leftText(doc, 'Net profit zone', M + 56, y + 3.5, 7, GRAY);
     }
   }
-  pageNum(doc, 7, totalPages);
+  endSection('roi');
 
-  // ── PAGE 8: Why Solispark ───────────────────────────────────────────────
+  // The legacy "Why Solispark" USP page has been removed. services.pdf now
+  // sits in that position in the final assembly and covers those points via
+  // the new custom design.
+
+  // ── SECTION: Scope of Work ───────────────────────────────────────────────
   doc.addPage();
-  y = TOP + 4;
-  y = sectionHead(doc, 'Why Solispark?', y);
-  y += 4;
-
-  const usps = [
-    { title: '3D Modelling Before Commitment', desc: 'We create a detailed 3D model of your rooftop solar installation so you can visualise the outcome before a single panel is placed.' },
-    { title: '48-Hour Service SLA', desc: 'Any issue, any time — our team responds within 48 hours, guaranteed. We believe in relationships, not transactions.' },
-    { title: 'Custom Engineered Structures', desc: 'Every roof is different. We design and fabricate mounting structures tailored to your property — no cookie-cutter solutions.' },
-    { title: 'Authorized Distribution Partner', desc: 'We are official partners of Axitec (Germany), Adani Solar, and Waaree — ensuring you get genuine, Tier-1 components with full warranty.' },
-    { title: '30-Year Panel Replacement Warranty', desc: 'Our Axitec panels come with an industry-leading 30-year panel replacement warranty — not just a degradation guarantee.' },
-  ];
-  usps.forEach((usp, i) => {
-    rect(doc, M, y, CW, 24, i % 2 === 0 ? OFF_WHITE : WHITE);
-    doc.setDrawColor(...GOLD);
-    doc.setLineWidth(0.3);
-    doc.rect(M, y, CW, 24, 'S');
-    rect(doc, M + 5, y + 5, 4, 4, GOLD);
-    leftText(doc, usp.title, M + 13, y + 9, 11, NAVY, 'bold');
-    leftText(doc, usp.desc, M + 13, y + 16, 8, GRAY, 'normal', CW - 18);
-    y += 28;
-  });
-  pageNum(doc, 8, totalPages);
-
-  // ── PAGE 9: Scope of Work ───────────────────────────────────────────────
-  doc.addPage();
+  beginSection('scope');
   y = TOP + 4;
   y = sectionHead(doc, 'Scope of Work', y);
   y += 2;
@@ -1003,11 +1074,11 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
     `You can also choose an Annual Maintenance Contract (AMC) for preventative maintenance services of your system from the second year onward by contacting our customer care number ${co.phone_1 || co.phone || ''}.`,
     y, { size: 9, color: NAVY }
   );
+  endSection('scope');
 
-  pageNum(doc, 9, totalPages);
-
-  // ── PAGE 10: Terms of Offer ─────────────────────────────────────────────
+  // ── SECTION: Terms of Offer ──────────────────────────────────────────────
   doc.addPage();
+  beginSection('terms');
   y = TOP + 4;
   y = sectionHead(doc, 'Terms of Offer', y);
   y += 4;
@@ -1065,7 +1136,6 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
 
   // If page is full, continue signature on the next page
   if (y > BOTTOM - 55) {
-    pageNum(doc, 10, totalPages);
     doc.addPage();
     y = TOP + 4;
   }
@@ -1096,101 +1166,141 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
   leftText(doc, 'Ranveer Dorai / Pruthvik Hariprasad', M, y, 10, NAVY, 'bold');
   y += 5;
   leftText(doc, 'Director.', M, y, 9, GRAY);
+  endSection('terms');
 
-  pageNum(doc, 10, totalPages);
-
-  // ── PAGE 11: Contact & Next Steps ────────────────────────────────────────
-  doc.addPage();
-  y = TOP + 20;
-  centeredText(doc, 'Ready to Go Solar?', y, 26, NAVY, 'bold');
-  y += 12;
-  centeredText(doc, "Here's what happens next:", y, 12, GOLD_DARK, 'normal');
-  y += 16;
-
-  const steps = [
-    'Sign this proposal and pay 30% advance',
-    'We schedule your installation within 7 days',
-    'Installation completed in 4–6 weeks',
-    'Net metering application filed',
-    'System commissioned — you start saving!',
-  ];
-  steps.forEach((step, i) => {
-    const cx = PW / 2 - 65;
-    const cy = y + 1;
-    doc.setFillColor(...GOLD);
-    doc.circle(cx, cy, 4, 'F');
-    doc.setFontSize(9);
-    doc.setTextColor(...NAVY);
-    doc.setFont(undefined, 'bold');
-    doc.text(String(i + 1), cx, cy + 1, { align: 'center' });
-    leftText(doc, step, cx + 8, cy + 1, 11, NAVY, 'normal');
-    y += 14;
-  });
-
-  y += 12;
-  goldLine(doc, y);
-  y += 16;
-  centeredText(doc, 'Contact Us', y, 14, GOLD_DARK, 'bold');
-  y += 10;
-  centeredText(doc, co.phone_1 + '  |  ' + co.phone_2, y, 11, NAVY);
-  y += 7;
-  centeredText(doc, co.email, y, 11, NAVY);
-  y += 7;
-  centeredText(doc, co.website, y, 11, GOLD_DARK, 'bold');
-  y += 14;
-  centeredText(doc, co.tagline, y, 14, GOLD, 'bold');
-  pageNum(doc, 11, totalPages);
+  // The legacy "Contact & Next Steps" dynamic page has been removed — the
+  // new quotation-page-last.pdf supplied by design fulfils that role as the
+  // permanent closing page, stitched in at assembly time.
 
   // ── Assemble final PDF ──────────────────────────────────────────────────
-  // Order:
-  //   1. quotation-page-first.pdf   (universal opener, unchanged)
-  //   2. 10 content pages           (with letterhead stamped behind each)
-  //   3. Selected datasheets        (original layout, no letterhead)
-  //   4. quotation-page-last.pdf    (universal closer, unchanged)
+  // Interleave the dynamic sections (stamped with the Solispark letterhead)
+  // with the four static marketing PDFs in this exact order:
+  //
+  //   1.  Cover Page — quotation-page-first.pdf   (static — the only cover)
+  //   2.  About Our Company — about-us.pdf        (static + dynamic client-name overlay)
+  //   3.  Cover Letter & Roof Snapshot            (dynamic)
+  //   4.  Why Choose Solar? — why-solar.pdf       (static)
+  //   5.  Energy Assessment                       (dynamic)
+  //   6.  System Design & Specifications          (dynamic)
+  //   7.  Commercial Offer                        (dynamic)
+  //   8.  ROI & Savings Projection (w/ chart)     (dynamic)
+  //   9.  Our Best Services — services.pdf        (static)
+  //   10. Scope of Work                           (dynamic)
+  //   11. How It Works — how-it-works.pdf         (static)
+  //   12. Terms of Offer                          (dynamic)
+  //   13. Technical Data Sheets                   (static — selected by user)
+  //   14. quotation-page-last.pdf                 (universal closer)
+  //
+  // We render the dynamic pages into a jsPDF content buffer above, then
+  // letterhead-stamp them into a standalone pdf-lib doc once, and cherry-pick
+  // page ranges out of that doc to drop between the static inserts. The
+  // `sections` map populated during rendering tells us where each section
+  // lives in the stamped doc (1-indexed page ranges, inclusive).
   const contentBytes = doc.output('arraybuffer');
+  const stampedDoc = await stampContentToStandaloneDoc(contentBytes);
+
   const finalDoc = await PDFDocument.create();
+  const overlayFont = await finalDoc.embedFont(StandardFonts.HelveticaBold);
 
-  // 1. Universal first page — always prepended. Required.
-  try {
-    await appendStaticPdf(finalDoc, FIRST_PAGE_URL, 'quotation-page-first');
-  } catch (err) {
-    console.error(err);
-    alert(
-      `Could not load the universal first page (${FIRST_PAGE_URL}).\n\n` +
-      `Check that the file exists at public/quotation-page-first.pdf.\n\n` +
-      `Details: ${err.message}`
-    );
-    throw err;
-  }
+  // Copy a named section out of the stamped doc into the final doc, in order.
+  const copySection = async (name) => {
+    const range = sections[name];
+    if (!range || range.start == null || range.end == null) {
+      console.warn('[pdf] section missing from stamped doc:', name);
+      return;
+    }
+    // Convert 1-indexed inclusive range → 0-indexed array of page indices.
+    const indices = [];
+    for (let i = range.start; i <= range.end; i++) indices.push(i - 1);
+    const copied = await finalDoc.copyPages(stampedDoc, indices);
+    copied.forEach((p) => finalDoc.addPage(p));
+  };
 
-  // 2. Letterhead-stamped quotation content
-  try {
-    await stampLetterheadInto(finalDoc, contentBytes);
-  } catch (err) {
-    console.error(err);
-    alert(
-      `Could not load the letterhead watermark (${LETTERHEAD_URL}).\n\n` +
-      `Check that the file exists at public/quoatation-water-mark-paper-final.pdf.\n\n` +
-      `Details: ${err.message}`
-    );
-    throw err;
-  }
+  // Dynamic greeting stamped on page 1 of about-us.pdf. Navy-bold, top-center,
+  // positioned so it sits cleanly inside the layout's designed header band.
+  // pdf-lib uses a bottom-left origin in PDF points (1pt ≈ 0.353mm).
+  const aboutOverlayFn = (page) => {
+    const greeting = `A Custom Partnership Prepared For: ${c.fullName || 'Our Valued Client'}`;
+    const { width, height } = page.getSize();
+    const fontSize = 14;
+    const textWidth = overlayFont.widthOfTextAtSize(greeting, fontSize);
+    // ~36pt (≈ 12mm) from the top edge — sits above most hero imagery but
+    // below any top-bar ornament the designer likely used.
+    const y = height - 50;
+    const x = (width - textWidth) / 2;
+    page.drawText(greeting, {
+      x,
+      y,
+      size: fontSize,
+      font: overlayFont,
+      color: OVERLAY_NAVY,
+    });
+  };
 
-  // 3. Selected equipment datasheets
+  // Helper: append a static PDF, loudly surfacing the failure if the file is
+  // missing from /public so the sales team doesn't silently get an incomplete
+  // document.
+  const safeAppendStatic = async (url, label, overlayFn) => {
+    try {
+      if (overlayFn) {
+        await appendStaticPdfWithOverlay(finalDoc, url, label, overlayFn);
+      } else {
+        await appendStaticPdf(finalDoc, url, label);
+      }
+    } catch (err) {
+      console.error(err);
+      alert(
+        `Could not load ${label} (${url}).\n\n` +
+        `Check that the file exists in /public.\n\n` +
+        `Details: ${err.message}`
+      );
+      throw err;
+    }
+  };
+
+  // 1. Universal first page (static — quotation-page-first.pdf). This is the
+  //    ONLY valid cover page; there is no dynamic fallback.
+  await safeAppendStatic(FIRST_PAGE_URL, 'quotation-page-first');
+
+  // 2. About Our Company (static + client-name overlay)
+  await safeAppendStatic(ABOUT_US_URL, 'about-us', aboutOverlayFn);
+
+  // 3. Cover Letter with roof snapshot (dynamic)
+  await copySection('coverLetter');
+
+  // 4. Why Choose Solar? (static)
+  await safeAppendStatic(WHY_SOLAR_URL, 'why-solar');
+
+  // 5. Energy Assessment (dynamic)
+  await copySection('energy');
+
+  // 6. System Specifications (dynamic)
+  await copySection('systemSpecs');
+
+  // 7. Commercial Offer (dynamic)
+  await copySection('commercial');
+
+  // 8. ROI & Savings Chart (dynamic)
+  await copySection('roi');
+
+  // 9. Our Best Services (static)
+  await safeAppendStatic(SERVICES_URL, 'services');
+
+  // 10. Scope of Work (dynamic)
+  await copySection('scope');
+
+  // 11. How It Works (static)
+  await safeAppendStatic(HOW_IT_WORKS_URL, 'how-it-works');
+
+  // 12. Terms of Offer (dynamic)
+  await copySection('terms');
+
+  // 13. Technical Data Sheets — user-selected equipment datasheets (no
+  //     letterhead so the OEM artwork reads at full fidelity).
   await appendDatasheets(finalDoc, q.attachedDocs || []);
 
-  // 4. Universal last page — always appended. Required.
-  try {
-    await appendStaticPdf(finalDoc, LAST_PAGE_URL, 'quotation-page-last');
-  } catch (err) {
-    console.error(err);
-    alert(
-      `Could not load the universal last page (${LAST_PAGE_URL}).\n\n` +
-      `Check that the file exists at public/quotation-page-last.pdf.\n\n` +
-      `Details: ${err.message}`
-    );
-    throw err;
-  }
+  // 14. Universal last page — required.
+  await safeAppendStatic(LAST_PAGE_URL, 'quotation-page-last');
 
   const finalBytes = await finalDoc.save();
 
