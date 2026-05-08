@@ -231,7 +231,7 @@ export const MOUNTING_OPTIONS = [
   'Ground Mount',
 ];
 
-export const BATTERY_OPTIONS = ['None', 'Deye 5.3kWh', 'PowerOne 5.3kWh', 'Custom'];
+export const BATTERY_OPTIONS = ['None', 'Deye 5.3kWh', 'Deye 16kWh', 'PowerOne 5.3kWh', 'Custom'];
 
 export const STATUS_OPTIONS = ['Draft', 'Sent', 'Accepted', 'Expired'];
 

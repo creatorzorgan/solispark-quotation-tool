@@ -74,11 +74,15 @@ const Step4Pricing = ({ draft, updatePricing, computed, config }) => {
             }
           >
             <input
-              type="number"
-              min="0"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               className="input"
-              value={systemCostShown}
-              onChange={(e) => updatePricing({ systemCostOverride: Number(e.target.value) })}
+              value={systemCostShown === 0 ? '' : systemCostShown}
+              onChange={(e) => {
+                const raw = e.target.value.replace(/\D/g, '');
+                updatePricing({ systemCostOverride: raw === '' ? 0 : Number(raw) });
+              }}
             />
           </Field>
 
@@ -110,11 +114,15 @@ const Step4Pricing = ({ draft, updatePricing, computed, config }) => {
             }
           >
             <input
-              type="number"
-              min="0"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               className="input"
-              value={discomShown}
-              onChange={(e) => updatePricing({ discomChargesOverride: Number(e.target.value) })}
+              value={discomShown === 0 ? '' : discomShown}
+              onChange={(e) => {
+                const raw = e.target.value.replace(/\D/g, '');
+                updatePricing({ discomChargesOverride: raw === '' ? 0 : Number(raw) });
+              }}
             />
           </Field>
 
@@ -146,11 +154,15 @@ const Step4Pricing = ({ draft, updatePricing, computed, config }) => {
             }
           >
             <input
-              type="number"
-              min="0"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               className="input"
-              value={subsidyShown}
-              onChange={(e) => updatePricing({ subsidyOverride: Number(e.target.value) })}
+              value={subsidyShown === 0 ? '' : subsidyShown}
+              onChange={(e) => {
+                const raw = e.target.value.replace(/\D/g, '');
+                updatePricing({ subsidyOverride: raw === '' ? 0 : Number(raw) });
+              }}
             />
           </Field>
         </div>
