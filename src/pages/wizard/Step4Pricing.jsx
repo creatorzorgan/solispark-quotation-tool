@@ -1,7 +1,7 @@
 import React from 'react';
 import { Field } from '../../components/ui.jsx';
 import { formatINR } from '../../utils/format.js';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, Sun } from 'lucide-react';
 
 // Pricing step — simplified to two editable fields:
 //   • System Cost (pre-GST)            — auto-calculated from panels + inverter
@@ -126,45 +126,69 @@ const Step4Pricing = ({ draft, updatePricing, computed, config }) => {
             />
           </Field>
 
-          <Field
-            label={
-              <span className="flex items-center justify-between gap-2">
-                <span>
-                  Government Subsidy{' '}
-                  <span className={subsidyIsOverride ? 'text-gold-dark' : 'text-cream-500'}>
-                    ({subsidyIsOverride ? 'manual' : 'auto'})
+          {/* PM Surya Ghar toggle */}
+          <div className="p-4 rounded-md border-2 border-gold-primary/40 bg-gold-light/10">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!p.pmSuryaGhar}
+                onChange={(e) => updatePricing({ pmSuryaGhar: e.target.checked })}
+                className="mt-0.5 w-5 h-5 accent-gold-primary shrink-0"
+              />
+              <div>
+                <div className="flex items-center gap-2 font-semibold text-navy-dark">
+                  <Sun className="w-4 h-4 text-gold-primary" />
+                  PM Surya Ghar Muft Bijli Yojana Project
+                </div>
+                <p className="text-xs text-cream-600 mt-0.5">
+                  When checked, government subsidy is deducted from the Grand Total (post-GST)
+                  and the final price is shown as <strong>Net Effective Price</strong>.
+                </p>
+              </div>
+            </label>
+          </div>
+
+          {p.pmSuryaGhar && (
+            <Field
+              label={
+                <span className="flex items-center justify-between gap-2">
+                  <span>
+                    Government Subsidy{' '}
+                    <span className={subsidyIsOverride ? 'text-gold-dark' : 'text-cream-500'}>
+                      ({subsidyIsOverride ? 'manual' : 'auto'})
+                    </span>
                   </span>
+                  {subsidyIsOverride && (
+                    <button
+                      type="button"
+                      onClick={() => updatePricing({ subsidyOverride: null })}
+                      className="text-xs text-navy-mid hover:text-gold-dark flex items-center gap-1"
+                      title="Reset to auto-calculated"
+                    >
+                      <RotateCcw className="w-3 h-3" /> reset
+                    </button>
+                  )}
                 </span>
-                {subsidyIsOverride && (
-                  <button
-                    type="button"
-                    onClick={() => updatePricing({ subsidyOverride: null })}
-                    className="text-xs text-navy-mid hover:text-gold-dark flex items-center gap-1"
-                    title="Reset to auto-calculated"
-                  >
-                    <RotateCcw className="w-3 h-3" /> reset
-                  </button>
-                )}
-              </span>
-            }
-            hint={
-              subsidyIsOverride
-                ? 'Manual override. Will show on the PDF.'
-                : 'Auto-calculated from PM Surya Ghar slabs (≤5 kW residential). Edit to override.'
-            }
-          >
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              className="input"
-              value={subsidyShown === 0 ? '' : subsidyShown}
-              onChange={(e) => {
-                const raw = e.target.value.replace(/\D/g, '');
-                updatePricing({ subsidyOverride: raw === '' ? 0 : Number(raw) });
-              }}
-            />
-          </Field>
+              }
+              hint={
+                subsidyIsOverride
+                  ? 'Manual override. Will show on the PDF.'
+                  : 'Auto-calculated from PM Surya Ghar slabs (≤5 kW residential). Edit to override.'
+              }
+            >
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                className="input"
+                value={subsidyShown === 0 ? '' : subsidyShown}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/\D/g, '');
+                  updatePricing({ subsidyOverride: raw === '' ? 0 : Number(raw) });
+                }}
+              />
+            </Field>
+          )}
         </div>
 
         {/* Commercial Offer summary (mirrors the PDF layout) */}
@@ -172,7 +196,7 @@ const Step4Pricing = ({ draft, updatePricing, computed, config }) => {
           <div className="bg-navy-dark text-white rounded-md p-6 sticky top-6">
             <div className="text-xs uppercase tracking-wider text-gold-light/80">Commercial Offer</div>
             <div className="mt-1 mb-5 font-heading text-3xl font-bold">
-              {formatINR(totals.grandTotal)}
+              {formatINR(totals.netEffectivePrice)}
             </div>
 
             <div className="text-sm">
@@ -205,20 +229,34 @@ const Step4Pricing = ({ draft, updatePricing, computed, config }) => {
                 <span>{formatINR(totals.subtotal)}</span>
               </div>
 
-              {subsidy > 0 && (
-                <div className="flex justify-between py-2 text-gold-light">
-                  <span>Govt. Subsidy {subsidyIsOverride && <em className="not-italic opacity-70">(manual)</em>}</span>
-                  <span>−{formatINR(subsidy)}</span>
-                </div>
-              )}
               <div className="flex justify-between py-2 text-white/80">
                 <span>GST @ {gstPercent}%</span>
                 <span>{formatINR(totals.gst)}</span>
               </div>
-              <div className="flex justify-between py-3 border-t border-white/10 font-heading text-xl text-gold-primary">
-                <span>Grand Total</span>
-                <span>{formatINR(totals.grandTotal)}</span>
-              </div>
+
+              {p.pmSuryaGhar && totals.appliedSubsidy > 0 ? (
+                <>
+                  <div className="flex justify-between py-2 text-white/60 text-xs border-t border-white/10 mt-1">
+                    <span>Grand Total (before subsidy)</span>
+                    <span>{formatINR(totals.grandTotal)}</span>
+                  </div>
+                  <div className="flex justify-between py-2 text-gold-light">
+                    <span>
+                      Less: Govt. Subsidy{subsidyIsOverride && <em className="not-italic opacity-70"> (manual)</em>}
+                    </span>
+                    <span>−{formatINR(totals.appliedSubsidy)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-3 border-t border-white/10 font-heading text-gold-primary">
+                    <span className="text-lg font-bold leading-tight">Net Effective Price</span>
+                    <span className="text-xl font-bold whitespace-nowrap">{formatINR(totals.netEffectivePrice)}</span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex justify-between py-3 border-t border-white/10 font-heading text-xl text-gold-primary">
+                  <span>Grand Total</span>
+                  <span>{formatINR(totals.grandTotal)}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -89,12 +89,16 @@ export const calculateCosts = ({
   };
 };
 
-export const calculateTotals = (costs, subsidy, gstRatePercent) => {
+// pmSuryaGhar: when true the government subsidy is deducted from the Grand
+// Total (post-GST), producing a "Net Effective Price" shown to the client.
+// When false, no subsidy is applied and Grand Total is the final figure.
+export const calculateTotals = (costs, subsidy, gstRatePercent, pmSuryaGhar = false) => {
   const subtotal = costs.subtotal;
-  const afterSubsidy = Math.max(0, subtotal - subsidy);
-  const gst = Math.round((afterSubsidy * gstRatePercent) / 100);
-  const grandTotal = afterSubsidy + gst;
-  return { subtotal, subsidy, afterSubsidy, gst, grandTotal };
+  const gst = Math.round((subtotal * gstRatePercent) / 100);
+  const grandTotal = subtotal + gst;
+  const appliedSubsidy = pmSuryaGhar ? Math.min(subsidy, grandTotal) : 0;
+  const netEffectivePrice = Math.max(0, grandTotal - appliedSubsidy);
+  return { subtotal, gst, grandTotal, appliedSubsidy, netEffectivePrice, afterSubsidy: netEffectivePrice };
 };
 
 export const paymentSchedule = (grandTotal, terms) => {
