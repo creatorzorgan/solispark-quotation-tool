@@ -57,10 +57,15 @@ const Step2Energy = ({ draft, updateEnergy, config }) => {
           />
           <div className="flex items-center gap-3 mt-3">
             <input
-              type="number"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               className="input max-w-xs"
-              value={e.monthlyBill}
-              onChange={(ev) => updateEnergy({ monthlyBill: Number(ev.target.value) })}
+              value={e.monthlyBill === 0 ? '' : e.monthlyBill}
+              onChange={(ev) => {
+                const raw = ev.target.value.replace(/\D/g, '');
+                updateEnergy({ monthlyBill: raw === '' ? 0 : Number(raw) });
+              }}
             />
             <span className="text-xs text-cream-600">₹1,000 – ₹5,00,000</span>
           </div>
@@ -68,10 +73,15 @@ const Step2Energy = ({ draft, updateEnergy, config }) => {
 
         <Field label="Average Daily Power Consumption (kWh)" hint="Auto-calculated, editable.">
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
+            pattern="[0-9]*\.?[0-9]*"
             className="input"
-            value={e.dailyConsumptionKwh}
-            onChange={(ev) => updateEnergy({ dailyConsumptionKwh: Number(ev.target.value) })}
+            value={e.dailyConsumptionKwh === 0 ? '' : e.dailyConsumptionKwh}
+            onChange={(ev) => {
+              const raw = ev.target.value.replace(/[^\d.]/g, '');
+              updateEnergy({ dailyConsumptionKwh: raw === '' ? 0 : Number(raw) });
+            }}
           />
         </Field>
 
@@ -87,20 +97,29 @@ const Step2Energy = ({ draft, updateEnergy, config }) => {
 
         <Field label="Current Per-Unit Rate (₹)" hint="Auto-filled from provider, editable.">
           <input
-            type="number"
-            step="0.1"
+            type="text"
+            inputMode="decimal"
+            pattern="[0-9]*\.?[0-9]*"
             className="input"
-            value={e.perUnitRate}
-            onChange={(ev) => updateEnergy({ perUnitRate: Number(ev.target.value) })}
+            value={e.perUnitRate === 0 ? '' : e.perUnitRate}
+            onChange={(ev) => {
+              const raw = ev.target.value.replace(/[^\d.]/g, '');
+              updateEnergy({ perUnitRate: raw === '' ? 0 : Number(raw) });
+            }}
           />
         </Field>
 
         <Field label="Available Roof Area (sq.ft)">
           <input
-            type="number"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             className="input"
-            value={e.roofAreaSqft}
-            onChange={(ev) => updateEnergy({ roofAreaSqft: Number(ev.target.value) })}
+            value={e.roofAreaSqft === 0 ? '' : e.roofAreaSqft}
+            onChange={(ev) => {
+              const raw = ev.target.value.replace(/\D/g, '');
+              updateEnergy({ roofAreaSqft: raw === '' ? 0 : Number(raw) });
+            }}
           />
         </Field>
 

@@ -12,7 +12,7 @@ import { panelCountFor, fitsOnRoof } from '../../utils/calculations.js';
 import { formatKw, formatNumber } from '../../utils/format.js';
 import { Zap, AlertTriangle, Sparkles, Plus, Trash2, RotateCcw } from 'lucide-react';
 
-const BATTERY_COSTS = { None: 0, 'Deye 5.3kWh': 280000, 'PowerOne 5.3kWh': 260000, Custom: 0 };
+const BATTERY_COSTS = { None: 0, 'Deye 5.3kWh': 280000, 'Deye 16kWh': 700000, 'PowerOne 5.3kWh': 260000, Custom: 0 };
 
 // Label for each panel preset in the combobox dropdown. Matching back to a
 // preset on change uses strict equality against this string.
@@ -131,20 +131,26 @@ const Step3System = ({ draft, updateSystem, updatePricing, config, suggestSystem
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Field label="Recommended System Size (kW)" hint="Auto-sized; nudge up or down as needed.">
           <input
-            type="number"
-            step="0.5"
+            type="text"
+            inputMode="decimal"
+            pattern="[0-9]*\.?[0-9]*"
             className="input"
-            value={s.systemSizeKw}
+            value={s.systemSizeKw === 0 ? '' : s.systemSizeKw}
             onChange={(e) => setSystemSize(e.target.value)}
           />
         </Field>
 
         <Field label="Number of Panels" hint="Auto-calculated from system size ÷ panel wattage.">
           <input
-            type="number"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             className="input"
-            value={s.panelCount}
-            onChange={(e) => updateSystem({ panelCount: Number(e.target.value) })}
+            value={s.panelCount === 0 ? '' : s.panelCount}
+            onChange={(e) => {
+              const raw = e.target.value.replace(/\D/g, '');
+              updateSystem({ panelCount: raw === '' ? 0 : Number(raw) });
+            }}
           />
         </Field>
 
@@ -167,10 +173,15 @@ const Step3System = ({ draft, updateSystem, updatePricing, config, suggestSystem
 
         <Field label="Panel Wattage (W)">
           <input
-            type="number"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             className="input"
-            value={s.panelWattage}
-            onChange={(e) => updateSystem({ panelWattage: Number(e.target.value) })}
+            value={s.panelWattage === 0 ? '' : s.panelWattage}
+            onChange={(e) => {
+              const raw = e.target.value.replace(/\D/g, '');
+              updateSystem({ panelWattage: raw === '' ? 0 : Number(raw) });
+            }}
           />
         </Field>
 
@@ -190,10 +201,15 @@ const Step3System = ({ draft, updateSystem, updatePricing, config, suggestSystem
 
         <Field label="Inverter Capacity (kW)">
           <input
-            type="number"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             className="input"
-            value={s.inverterCapacityKw}
-            onChange={(e) => updateSystem({ inverterCapacityKw: Number(e.target.value) })}
+            value={s.inverterCapacityKw === 0 ? '' : s.inverterCapacityKw}
+            onChange={(e) => {
+              const raw = e.target.value.replace(/\D/g, '');
+              updateSystem({ inverterCapacityKw: raw === '' ? 0 : Number(raw) });
+            }}
           />
         </Field>
 
@@ -256,17 +272,17 @@ const Step3System = ({ draft, updateSystem, updatePricing, config, suggestSystem
           Editable equipment schedule that prints on the System Specifications page of the proposal. Pick from the dropdowns or type your own.
         </p>
 
-        <div className="overflow-x-auto border border-cream-200 rounded-md">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto border border-cream-200 rounded-md -mx-1 sm:mx-0">
+          <table className="w-full text-sm" style={{ minWidth: '640px' }}>
             <thead className="bg-navy-dark text-white">
               <tr>
-                <th className="px-2 py-2 text-left w-10">Sl.</th>
+                <th className="px-2 py-2 text-left w-8">#</th>
                 <th className="px-2 py-2 text-left">Description</th>
-                <th className="px-2 py-2 text-left w-44">Section</th>
-                <th className="px-2 py-2 text-left w-32">Qty</th>
-                <th className="px-2 py-2 text-left w-24">UOM</th>
-                <th className="px-2 py-2 text-left w-40">Make</th>
-                <th className="px-2 py-2 w-10"></th>
+                <th className="px-2 py-2 text-left w-36">Section</th>
+                <th className="px-2 py-2 text-left w-24">Qty</th>
+                <th className="px-2 py-2 text-left w-20">UOM</th>
+                <th className="px-2 py-2 text-left w-32">Make</th>
+                <th className="px-2 py-2 w-8"></th>
               </tr>
             </thead>
             <tbody>
