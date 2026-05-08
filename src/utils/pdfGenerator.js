@@ -420,7 +420,7 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
   // has done significant work.
   let savingsChartSprite = null;
   const totalsSoFar = computed?.totals || {};
-  const netCostForChart = (totalsSoFar.afterSubsidy || 0) + (totalsSoFar.gst || 0);
+  const netCostForChart = totalsSoFar.netEffectivePrice || 0;
   if (s.systemSizeKw > 0 && e.perUnitRate > 0) {
     try {
       savingsChartSprite = await captureSavingsChart({
@@ -864,18 +864,27 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
     doc.addPage();
     y = TOP + 4;
   }
-  if ((computed?.subsidy || 0) > 0) {
-    leftText(doc, 'Government Subsidy (PM Surya Ghar Muft Bijli Yojana)', M + CW / 2 - 40, y, 10, GRAY);
-    rightText(doc, `- ${formatRs(computed.subsidy)}`, PW - M, y, 11, NAVY, 'bold');
-    y += 7;
-  }
   leftText(doc, `GST @ ${config.pricing_defaults.tax.gst_rate_percent}%`, M + CW / 2 - 40, y, 10, GRAY);
   rightText(doc, formatRs(totals.gst), PW - M, y, 11, NAVY, 'bold');
-  y += 5;
-  goldLine(doc, y);
-  y += 10;
-  leftText(doc, 'GRAND TOTAL', M + CW / 2 - 40, y, 14, NAVY, 'bold');
-  rightText(doc, formatRs(totals.grandTotal), PW - M, y, 16, GOLD_DARK, 'bold');
+  y += 7;
+  if ((totals.appliedSubsidy || 0) > 0) {
+    leftText(doc, 'Grand Total (Before Subsidy)', M + CW / 2 - 40, y, 10, GRAY);
+    rightText(doc, formatRs(totals.grandTotal), PW - M, y, 11, NAVY, 'bold');
+    y += 7;
+    leftText(doc, 'Less: Govt. Subsidy (PM Surya Ghar Muft Bijli Yojana)', M + CW / 2 - 40, y, 10, GRAY);
+    rightText(doc, `- ${formatRs(totals.appliedSubsidy)}`, PW - M, y, 11, NAVY, 'bold');
+    y += 5;
+    goldLine(doc, y);
+    y += 10;
+    leftText(doc, 'NET EFFECTIVE PRICE', M + CW / 2 - 40, y, 14, NAVY, 'bold');
+    rightText(doc, formatRs(totals.netEffectivePrice), PW - M, y, 16, GOLD_DARK, 'bold');
+  } else {
+    y += 2;
+    goldLine(doc, y);
+    y += 10;
+    leftText(doc, 'GRAND TOTAL', M + CW / 2 - 40, y, 14, NAVY, 'bold');
+    rightText(doc, formatRs(totals.grandTotal), PW - M, y, 16, GOLD_DARK, 'bold');
+  }
   endSection('commercial');
 
   // ── SECTION: ROI & Savings ───────────────────────────────────────────────
@@ -964,7 +973,7 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
       const chartW = CW;
       const chartH = 60;
       const maxVal = Math.max(...barData.map((d) => d.cumulative));
-      const netCost = totals.afterSubsidy || 0;
+      const netCost = totals.netEffectivePrice || 0;
       const barW = (chartW - 10) / barData.length;
 
       rect(doc, chartX, y, chartW, chartH, OFF_WHITE);

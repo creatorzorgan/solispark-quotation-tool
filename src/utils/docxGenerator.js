@@ -374,10 +374,11 @@ function commercialOffer({ s, panel, computed, config, discomName }) {
     emptyLine(),
   ];
 
-  if ((computed?.subsidy || 0) > 0) {
+  if ((totals.appliedSubsidy || 0) > 0) {
     out.push(simpleTwoColTable([
-      ['Government Subsidy (PM Surya Ghar Muft Bijli Yojana)', `- ${formatRs(computed.subsidy)}`],
       [`GST @ ${config.pricing_defaults.tax.gst_rate_percent}%`, formatRs(totals.gst)],
+      ['Grand Total (Before Subsidy)', formatRs(totals.grandTotal)],
+      ['Less: Govt. Subsidy (PM Surya Ghar Muft Bijli Yojana)', `- ${formatRs(totals.appliedSubsidy)}`],
     ]));
   } else {
     out.push(simpleTwoColTable([
@@ -391,8 +392,11 @@ function commercialOffer({ s, panel, computed, config, discomName }) {
     rows: [
       new TableRow({
         children: [
-          cell('GRAND TOTAL', { bold: true, size: 26, fill: NAVY, color: WHITE, width: 60 }),
-          cell(formatRs(totals.grandTotal), {
+          cell(
+            (totals.appliedSubsidy || 0) > 0 ? 'NET EFFECTIVE PRICE' : 'GRAND TOTAL',
+            { bold: true, size: 26, fill: NAVY, color: WHITE, width: 60 }
+          ),
+          cell(formatRs(totals.netEffectivePrice || totals.grandTotal), {
             bold: true, size: 30, color: GOLD, fill: NAVY,
             alignment: AlignmentType.RIGHT, width: 40,
           }),

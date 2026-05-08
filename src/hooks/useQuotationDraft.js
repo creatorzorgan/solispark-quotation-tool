@@ -77,6 +77,9 @@ export const createEmptyQuotation = (config) => ({
     netMeteringFlat: config.pricing_defaults.flat_costs.net_metering_fees,
     installationLaborPerKw: config.pricing_defaults.other_costs_per_kw.installation_labor,
     transportFlat: config.pricing_defaults.flat_costs.transportation,
+    // PM Surya Ghar Muft Bijli Yojana — when true the government subsidy is
+    // deducted from the Grand Total (post-GST) to produce a Net Effective Price.
+    pmSuryaGhar: false,
     // Manual subsidy override — null ⇒ use the calculated value. Set any number
     // (including 0) to override the PM Surya Ghar slab calc for this quote.
     subsidyOverride: null,
@@ -181,13 +184,18 @@ export const useQuotationDraft = (config, initial) => {
       config.pricing_defaults.government_subsidy
     );
     const subsidy = pricing.subsidyOverride != null ? Math.max(0, pricing.subsidyOverride) : autoSubsidy;
-    const totals = calculateTotals(resolvedCosts, subsidy, config.pricing_defaults.tax.gst_rate_percent);
-    const schedule = paymentSchedule(totals.grandTotal, config.payment_terms);
+    const totals = calculateTotals(
+      resolvedCosts,
+      subsidy,
+      config.pricing_defaults.tax.gst_rate_percent,
+      pricing.pmSuryaGhar
+    );
+    const schedule = paymentSchedule(totals.netEffectivePrice, config.payment_terms);
     const roi = calculateROI({
       systemSizeKw: system.systemSizeKw,
       perUnitRate: energy.perUnitRate,
-      netCost: totals.afterSubsidy + totals.gst,
-      paybackBasis: totals.afterSubsidy,
+      netCost: totals.netEffectivePrice,
+      paybackBasis: totals.netEffectivePrice,
       years: 25,
       peakSunHours: config.calculation_constants.peak_sun_hours,
       annualEscalationPercent: config.calculation_constants.annual_tariff_escalation_percent,
@@ -212,10 +220,10 @@ export const useQuotationDraft = (config, initial) => {
     if (!computed) return;
     updatePricing({
       costs: computed.costs,
-      subsidy: computed.subsidy,
-      afterSubsidy: computed.totals.afterSubsidy,
+      subsidy: computed.totals.appliedSubsidy,
+      afterSubsidy: computed.totals.netEffectivePrice,
       gst: computed.totals.gst,
-      grandTotal: computed.totals.grandTotal,
+      grandTotal: computed.totals.netEffectivePrice,
     });
   };
 
