@@ -13,6 +13,7 @@ const enc = (s) => encodeURI(`${base}/${s}`);
 export const EQUIPMENT_CATALOG = {
   Panels: [
     { label: 'Axitec 570-600 Wp',                    brand: 'Axitec',     path: enc('panels/Axitec - 570 - 600 Wp .pdf') },
+    { label: 'Axitec AXIbipremium XXL HC MT 510-550 Wp', brand: 'Axitec', path: enc('panels/260328 510 - 550 Wp AXIbipremium XXL HC MT - Pixon Green Datasheet.pdf') },
     { label: 'Axitec 600 Wp AXIbiperfect',           brand: 'Axitec',     path: enc('panels/600 Wp AXIbiperfect .pdf') },
     { label: 'Axitec TOPCon',                        brand: 'Axitec',     path: enc('panels/axitech-topcon.pdf') },
     { label: 'Axitec (General)',                     brand: 'Axitec',     path: enc('panels/axitech.pdf') },
