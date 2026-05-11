@@ -85,6 +85,15 @@
         "country": "Germany",
         "tier": 1
       },
+      "axitec_550w_xxlhc_mt": {
+        "brand": "Axitec",
+        "model": "AXIbipremium XXL HC MT",
+        "wattage": 550,
+        "price_per_panel": 16000,
+        "warranty_years": 30,
+        "country": "Germany",
+        "tier": 1
+      },
       "adani_545w": {
         "brand": "Adani Solar",
         "model": "ASP-7-545",

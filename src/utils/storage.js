@@ -34,7 +34,25 @@ const writeJSON = (key, value) => {
 // --- Config ----------------------------------------------------------------
 export const getConfig = () => {
   const stored = readJSON(K_CONFIG, null);
-  return stored || DEFAULT_CONFIG;
+  if (!stored) return DEFAULT_CONFIG;
+  // Backfill new panel presets into older saved configs so dropdowns keep
+  // reflecting newly added catalog options without forcing a full reset.
+  return {
+    ...DEFAULT_CONFIG,
+    ...stored,
+    pricing_defaults: {
+      ...DEFAULT_CONFIG.pricing_defaults,
+      ...(stored.pricing_defaults || {}),
+      panels: {
+        ...DEFAULT_CONFIG.pricing_defaults.panels,
+        ...(stored.pricing_defaults?.panels || {}),
+      },
+      inverters: {
+        ...DEFAULT_CONFIG.pricing_defaults.inverters,
+        ...(stored.pricing_defaults?.inverters || {}),
+      },
+    },
+  };
 };
 export const saveConfig = (config) => writeJSON(K_CONFIG, config);
 export const resetConfig = () => {

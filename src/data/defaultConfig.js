@@ -47,6 +47,16 @@ export const DEFAULT_CONFIG = {
         warranty_years: 30,
         country: 'Germany',
       },
+      axitec_550w_xxlhc_mt: {
+        key: 'axitec_550w_xxlhc_mt',
+        label: 'Axitec 510-550Wp AXIbipremium XXL HC MT',
+        brand: 'Axitec',
+        model: 'AXIbipremium XXL HC MT',
+        wattage: 550,
+        price_per_panel: 16000,
+        warranty_years: 30,
+        country: 'Germany',
+      },
       axitec_590w: {
         key: 'axitec_590w',
         label: 'Axitec 590Wp',
