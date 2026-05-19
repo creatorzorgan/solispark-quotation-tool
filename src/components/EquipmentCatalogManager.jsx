@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import { getEquipmentOverrides, resolveCatalogPath } from '../utils/equipmentCatalogMerge.js';
 import { saveEquipmentBlob, deleteEquipmentBlob } from '../utils/equipmentBlobStore.js';
+import {
+  isSharedEquipmentUploadAvailable,
+  uploadEquipmentPdfShared,
+  deleteSharedEquipmentPdf,
+} from '../utils/equipmentCloudUpload.js';
 import { Plus, Trash2, Settings2 } from 'lucide-react';
 
 const CATEGORIES = [
@@ -21,8 +26,10 @@ const EquipmentCatalogManager = ({ config, saveConfig, showToast, equipmentIndex
   const [addPath, setAddPath] = useState('');
   const [addFile, setAddFile] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [shareUpload, setShareUpload] = useState(() => isSharedEquipmentUploadAvailable());
 
   const overrides = getEquipmentOverrides(config);
+  const sharedUploadOk = isSharedEquipmentUploadAvailable();
 
   const persist = (next) => saveConfig({ ...config, equipment_catalog: next });
 
@@ -34,23 +41,39 @@ const EquipmentCatalogManager = ({ config, saveConfig, showToast, equipmentIndex
     setBusy(true);
     try {
       let path;
+      let storageObjectPath = null;
+
       if (addFile) {
         if (addFile.type !== 'application/pdf') {
           showToast?.('Please choose a PDF file', 'error');
           return;
         }
-        path = await saveEquipmentBlob(addFile);
+        const useShared = shareUpload && sharedUploadOk;
+        if (useShared) {
+          const out = await uploadEquipmentPdfShared(addFile);
+          path = out.publicUrl;
+          storageObjectPath = out.storageObjectPath;
+        } else {
+          path = await saveEquipmentBlob(addFile);
+        }
       } else if (addPath.trim()) {
         path = resolveCatalogPath(addPath.trim());
       } else {
         showToast?.('Upload a PDF or enter a path (e.g. panels/Tata 540 DCR.pdf)', 'error');
         return;
       }
+
       persist({
         ...overrides,
         custom: [
           ...overrides.custom,
-          { label: addLabel.trim(), brand: addBrand.trim(), category: addCategory, path },
+          {
+            label: addLabel.trim(),
+            brand: addBrand.trim(),
+            category: addCategory,
+            path,
+            ...(storageObjectPath ? { storageObjectPath } : {}),
+          },
         ],
       });
       setAddLabel('');
@@ -60,19 +83,31 @@ const EquipmentCatalogManager = ({ config, saveConfig, showToast, equipmentIndex
       showToast?.('Datasheet added to catalog');
     } catch (err) {
       console.error(err);
-      showToast?.('Could not add datasheet', 'error');
+      showToast?.(err?.message || 'Could not add datasheet', 'error');
     } finally {
       setBusy(false);
     }
   };
 
-  const removeCustom = async (path) => {
-    if (path.startsWith('equipment-blob://')) await deleteEquipmentBlob(path);
+  const removeCustom = async (resolvedPath) => {
+    const row = overrides.custom.find((c) => resolveCatalogPath(c.path) === resolvedPath);
+    try {
+      if (resolvedPath.startsWith('equipment-blob://')) {
+        await deleteEquipmentBlob(resolvedPath);
+      } else if (row && (row.storageObjectPath || /^https?:\/\//i.test(String(row.path || '')))) {
+        await deleteSharedEquipmentPdf(resolvedPath, row.storageObjectPath);
+      }
+    } catch (err) {
+      console.error(err);
+      showToast?.(err?.message || 'Could not remove file from storage', 'error');
+      return;
+    }
+
     persist({
       ...overrides,
-      custom: overrides.custom.filter((c) => resolveCatalogPath(c.path) !== path),
+      custom: overrides.custom.filter((c) => resolveCatalogPath(c.path) !== resolvedPath),
     });
-    onRemovedPath?.(path);
+    onRemovedPath?.(resolvedPath);
     showToast?.('Custom datasheet removed');
   };
 
@@ -88,11 +123,27 @@ const EquipmentCatalogManager = ({ config, saveConfig, showToast, equipmentIndex
       </button>
       {open && (
         <div className="p-4 bg-cream-50 border border-cream-200 rounded-md space-y-4">
-          <p className="text-xs text-cream-600">
-            Add PDFs by uploading (this browser only) or by path under{' '}
-            <code className="text-[11px]">public/SYSTEM EQUIPMENTS/</code>. Path-based entries work for all users
-            after deploy. Custom/hidden lists sync with Settings when Supabase is on.
-          </p>
+          <div className="text-xs text-cream-600 space-y-2">
+            <p>
+              <strong>Everyone on the Vercel link</strong> sees the same catalog when Supabase env vars are set on
+              Vercel (config syncs to the database).
+            </p>
+            <ul className="list-disc pl-4 space-y-1">
+              <li>
+                <strong>Shared upload</strong> stores the PDF in Supabase Storage (needs server env on Vercel — see{' '}
+                <code className="text-[11px]">docs/VERCEL_SUPABASE_AND_DATASHEETS.md</code>).
+              </li>
+              <li>
+                <strong>This device only</strong> keeps the file in this browser (IndexedDB). Other users will not
+                see that PDF.
+              </li>
+              <li>
+                <strong>Path</strong> (e.g. <code className="text-[11px]">panels/Tata 540 DCR.pdf</code>) points at a
+                file under <code className="text-[11px]">public/SYSTEM EQUIPMENTS/</code> on the deployed site — works
+                for everyone after you deploy that file.
+              </li>
+            </ul>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             <input
               className="input text-sm"
@@ -120,8 +171,28 @@ const EquipmentCatalogManager = ({ config, saveConfig, showToast, equipmentIndex
               onChange={(e) => setAddPath(e.target.value)}
             />
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
             <input type="file" accept="application/pdf" className="text-sm" onChange={(e) => setAddFile(e.target.files?.[0] || null)} />
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                className="w-4 h-4 accent-gold-primary"
+                checked={shareUpload}
+                disabled={!sharedUploadOk}
+                onChange={(e) => setShareUpload(e.target.checked)}
+              />
+              <span className={sharedUploadOk ? 'text-navy-dark' : 'text-cream-600'}>
+                Share PDF with all users (Supabase Storage)
+              </span>
+            </label>
+            {!sharedUploadOk && (
+              <span className="text-xs text-amber-700">
+                Supabase client not configured, or use <code className="text-[11px]">VITE_API_ORIGIN</code> + deployed
+                APIs for local dev.
+              </span>
+            )}
+          </div>
+          <div>
             <button type="button" className="btn-outline text-xs" disabled={busy} onClick={handleAdd}>
               <Plus className="w-3.5 h-3.5" /> Add to catalog
             </button>
@@ -135,7 +206,15 @@ const EquipmentCatalogManager = ({ config, saveConfig, showToast, equipmentIndex
                   return (
                     <li key={path} className="flex items-center justify-between text-sm gap-2">
                       <span>
-                        {c.label} <span className="text-cream-600">({c.category})</span>
+                        {c.label}{' '}
+                        <span className="text-cream-600">
+                          ({c.category})
+                          {c.storageObjectPath || /^https?:\/\//i.test(String(c.path || ''))
+                            ? ' · shared'
+                            : path.startsWith('equipment-blob://')
+                            ? ' · this device'
+                            : ''}
+                        </span>
                       </span>
                       <button type="button" className="text-rose-600" onClick={() => removeCustom(path)}>
                         <Trash2 className="w-4 h-4" />

@@ -33,6 +33,10 @@ function normalizeCustomEntry(entry) {
     brand: entry.brand || '',
     path,
     category: entry.category || 'Panels',
+    storageObjectPath:
+      typeof entry.storageObjectPath === 'string' && entry.storageObjectPath.startsWith('datasheets/')
+        ? entry.storageObjectPath
+        : null,
   };
 }
 
@@ -57,6 +61,7 @@ export function buildEquipmentCatalog(config) {
         label: entry.label,
         brand: entry.brand,
         path: entry.path,
+        ...(entry.storageObjectPath ? { storageObjectPath: entry.storageObjectPath } : {}),
       });
     }
   });

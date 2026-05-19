@@ -23,6 +23,12 @@ const Step6Preview = ({ draft, computed, config, onFinalize }) => {
   const c = draft.client;
   const s = draft.system;
   const e = draft.energy;
+  const presetPanel = config.pricing_defaults.panels[s.panelKey];
+  const panel =
+    presetPanel ||
+    (s.customPanelBrand
+      ? { brand: s.customPanelBrand, wattage: s.panelWattage }
+      : { brand: 'Custom', wattage: s.panelWattage });
 
   const handleDownload = async () => {
     await generatePdf({ quotation: draft, computed, config });
@@ -65,7 +71,10 @@ const Step6Preview = ({ draft, computed, config, onFinalize }) => {
         <div className="card p-6">
           <h3 className="font-heading text-base font-semibold text-navy-dark mb-4">System</h3>
           <Row label="Size" value={formatKw(s.systemSizeKw)} />
-          <Row label="Panels" value={`${s.panelCount} × ${panel?.brand} ${panel?.wattage}W`} />
+          <Row
+            label="Panels"
+            value={`${s.panelCount} × ${panel?.brand || '—'} ${panel?.wattage ?? s.panelWattage}W`}
+          />
           <Row label="Inverter" value={`${s.inverterCapacityKw} kW`} />
           <Row label="Mounting" value={s.mounting} />
           <Row label="Battery" value={s.batteryOption} />
