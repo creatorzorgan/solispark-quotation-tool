@@ -283,6 +283,19 @@ async function stampLetterheadInto(finalDoc, contentBytes) {
   return finalDoc;
 }
 
+/**
+ * Datasheet URLs from the catalog are already encodeURI'd (spaces → %20).
+ * Full https URLs must not be passed through encodeURI again (breaks % escapes
+ * and query strings, e.g. Supabase public URLs).
+ */
+function normalizeDatasheetFetchUrl(path) {
+  if (path == null || typeof path !== 'string') return path;
+  const t = path.trim();
+  if (/^https?:\/\//i.test(t)) return t;
+  if (t.startsWith('/')) return t;
+  return encodeURI(t);
+}
+
 // Fetch selected datasheet PDFs and append to the final doc (no letterhead).
 async function appendDatasheets(finalDoc, paths) {
   if (!paths || !paths.length) return;
@@ -297,7 +310,8 @@ async function appendDatasheets(finalDoc, paths) {
           continue;
         }
       } else {
-        const res = await fetch(encodeURI(path));
+        const url = normalizeDatasheetFetchUrl(path);
+        const res = await fetch(url);
         if (!res.ok) {
           console.warn('[pdf] datasheet fetch failed:', path, res.status);
           continue;
