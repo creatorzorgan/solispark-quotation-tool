@@ -8,7 +8,9 @@
 // don't turn these into 404s. BASE_URL has a trailing slash already.
 const BASE = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL) || '/';
 const base = `${BASE}SYSTEM EQUIPMENTS`;
-const enc = (s) => encodeURI(`${base}/${s}`);
+export const equipmentPath = (relativePath) => encodeURI(`${base}/${relativePath}`);
+const enc = equipmentPath;
+export const BLOB_PATH_PREFIX = 'equipment-blob://';
 
 export const EQUIPMENT_CATALOG = {
   Panels: [
@@ -49,6 +51,7 @@ export const EQUIPMENT_CATALOG = {
     { label: 'Havells TOPCon',                       brand: 'Havells',    path: enc('panels/Havells Solar Topcon Panel.pdf') },
     { label: 'Vikram Solar',                         brand: 'Vikram',     path: enc('panels/VIKRAM.pdf') },
     { label: 'Credence 710-730W TOPCon',             brand: 'Credence',   path: enc('panels/710-730W Topcon credence.pdf') },
+    { label: 'Tata 540 DCR',                         brand: 'Tata Power Solar', path: enc('panels/Tata 540 DCR.pdf') },
   ],
 
   Inverters: [
@@ -155,12 +158,15 @@ export const EQUIPMENT_INDEX = Object.entries(EQUIPMENT_CATALOG).reduce(
 // Suggest an initial set of datasheets based on the selected panel/inverter/battery.
 // Tries to match on brand and size — imperfect but saves a lot of clicks for the
 // common case. Users can toggle anything on/off afterwards.
-export const suggestAttachments = ({ panel, inverter, batteryOption, systemSizeKw }) => {
+export const suggestAttachments = (
+  { panel, inverter, batteryOption, systemSizeKw },
+  catalog = EQUIPMENT_CATALOG
+) => {
   const picked = new Set();
 
   // Panel: prefer exact wattage match, fallback to brand
   if (panel?.brand) {
-    const brandMatches = EQUIPMENT_CATALOG.Panels.filter((p) => p.brand === panel.brand);
+    const brandMatches = (catalog.Panels || []).filter((p) => p.brand === panel.brand);
     // Try matching on wattage in the label
     const exact = brandMatches.find((p) => p.label.toLowerCase().includes(String(panel.wattage || '')));
     if (exact) picked.add(exact.path);
@@ -169,7 +175,7 @@ export const suggestAttachments = ({ panel, inverter, batteryOption, systemSizeK
 
   // Inverter: prefer a datasheet whose label covers the system size
   if (inverter?.brand) {
-    const brandMatches = EQUIPMENT_CATALOG.Inverters.filter((i) => i.brand === inverter.brand);
+    const brandMatches = (catalog.Inverters || []).filter((i) => i.brand === inverter.brand);
     const size = systemSizeKw || inverter.capacity_kw || 0;
     // Parse "X-Y kW" ranges from labels
     const covering = brandMatches.find((i) => {
@@ -186,7 +192,7 @@ export const suggestAttachments = ({ panel, inverter, batteryOption, systemSizeK
   // Battery: match on brand prefix of the option label (e.g. "Deye 5.3kWh")
   if (batteryOption && batteryOption !== 'None') {
     const brandFromOption = batteryOption.split(' ')[0]; // "Deye", "PowerOne"
-    const match = EQUIPMENT_CATALOG.Battery.find((b) =>
+    const match = (catalog.Battery || []).find((b) =>
       (b.brand || '').toLowerCase().startsWith(brandFromOption.toLowerCase())
     );
     if (match) picked.add(match.path);

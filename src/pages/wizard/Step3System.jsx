@@ -1,5 +1,7 @@
 import React from 'react';
+import { useApp } from '../../context/AppContext.jsx';
 import { Combobox, Field } from '../../components/ui.jsx';
+import EquipmentSelector from '../../components/EquipmentSelector.jsx';
 import {
   MOUNTING_OPTIONS,
   BATTERY_OPTIONS,
@@ -18,10 +20,15 @@ const BATTERY_COSTS = { None: 0, 'Deye 5.3kWh': 280000, 'Deye 16kWh': 700000, 'P
 // preset on change uses strict equality against this string.
 const panelLabel = (p) => `${p.label} — ${p.brand}`;
 
-const Step3System = ({ draft, updateSystem, updatePricing, config, suggestSystem }) => {
+const Step3System = ({ draft, updateSystem, updatePricing, config, suggestSystem, setAttachedDocs }) => {
+  const { saveConfig, showToast } = useApp();
   const s = draft.system;
   const panels = config.pricing_defaults.panels;
   const inverters = config.pricing_defaults.inverters;
+  const panel =
+    panels[s.panelKey] ||
+    (s.customPanelBrand ? { brand: s.customPanelBrand, wattage: s.panelWattage } : null);
+  const inverter = inverters[s.inverterKey];
   const roofFits = fitsOnRoof(s.systemSizeKw, draft.energy.roofAreaSqft, config.calculation_constants.sqft_per_kw_rooftop);
 
   // Display value for the panel-brand combobox. Custom-typed names win; if a
@@ -348,6 +355,16 @@ const Step3System = ({ draft, updateSystem, updatePricing, config, suggestSystem
           </table>
         </div>
       </div>
+
+      <EquipmentSelector
+        draft={draft}
+        setAttachedDocs={setAttachedDocs}
+        panel={panel}
+        inverter={inverter}
+        config={config}
+        saveConfig={saveConfig}
+        showToast={showToast}
+      />
 
       <div className="mt-6 p-5 bg-navy-dark text-white rounded-md flex items-center gap-4 flex-wrap">
         <Zap className="w-8 h-8 text-gold-primary" />

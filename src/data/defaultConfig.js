@@ -203,6 +203,11 @@ export const DEFAULT_CONFIG = {
     'Any additional civil work required on the roof is not included in this proposal.',
     'Pricing assumes standard installation conditions. Complex roofs may require additional charges.',
   ],
+  // User-added datasheets and hidden built-ins (synced with Settings / Supabase).
+  equipment_catalog: {
+    hidden: [],
+    custom: [],
+  },
 };
 
 export const PROPERTY_TYPES = [

@@ -1,14 +1,38 @@
 import React, { useMemo, useState } from 'react';
-import { EQUIPMENT_CATALOG, EQUIPMENT_INDEX, suggestAttachments } from '../data/equipmentCatalog.js';
-import { Paperclip, Sparkles, ChevronDown, ChevronRight, X } from 'lucide-react';
+import { suggestAttachments } from '../data/equipmentCatalog.js';
+import {
+  buildEquipmentCatalog,
+  buildEquipmentIndex,
+  getEquipmentOverrides,
+  resolveCatalogPath,
+} from '../utils/equipmentCatalogMerge.js';
+import EquipmentCatalogManager from './EquipmentCatalogManager.jsx';
+import { Paperclip, Sparkles, ChevronDown, ChevronRight, X, Trash2 } from 'lucide-react';
 
 // Grouped, collapsible datasheet picker. Persists selection to draft.attachedDocs.
 // `panel` / `inverter` are the resolved config entries (used by suggestAttachments
 // for the auto-suggest button).
-const EquipmentSelector = ({ draft, setAttachedDocs, panel, inverter }) => {
+const EquipmentSelector = ({ draft, setAttachedDocs, panel, inverter, config, saveConfig, showToast }) => {
   const selected = draft.attachedDocs || [];
   const [openCats, setOpenCats] = useState(() => ({ Panels: true, Inverters: true, Battery: true }));
   const [filter, setFilter] = useState('');
+
+  const catalog = useMemo(() => buildEquipmentCatalog(config), [config]);
+  const equipmentIndex = useMemo(() => buildEquipmentIndex(catalog), [catalog]);
+  const overrides = getEquipmentOverrides(config);
+
+  const hideBuiltIn = (path) => {
+    if (overrides.hidden.includes(path)) return;
+    saveConfig({
+      ...config,
+      equipment_catalog: { ...overrides, hidden: [...overrides.hidden, path] },
+    });
+    setAttachedDocs(selected.filter((p) => p !== path));
+    showToast?.('Datasheet removed from catalog');
+  };
+
+  const isCustomPath = (path) =>
+    overrides.custom.some((c) => resolveCatalogPath(c.path) === path);
 
   const toggle = (path) => {
     const next = selected.includes(path) ? selected.filter((p) => p !== path) : [...selected, path];
@@ -18,12 +42,15 @@ const EquipmentSelector = ({ draft, setAttachedDocs, panel, inverter }) => {
   const toggleCat = (cat) => setOpenCats((o) => ({ ...o, [cat]: !o[cat] }));
 
   const runSuggest = () => {
-    const picks = suggestAttachments({
-      panel,
-      inverter,
-      batteryOption: draft.system?.batteryOption,
-      systemSizeKw: draft.system?.systemSizeKw,
-    });
+    const picks = suggestAttachments(
+      {
+        panel,
+        inverter,
+        batteryOption: draft.system?.batteryOption,
+        systemSizeKw: draft.system?.systemSizeKw,
+      },
+      catalog
+    );
     // Merge with existing selection, don't clobber manual additions
     const merged = Array.from(new Set([...(draft.attachedDocs || []), ...picks]));
     setAttachedDocs(merged);
@@ -34,9 +61,9 @@ const EquipmentSelector = ({ draft, setAttachedDocs, panel, inverter }) => {
   // Apply filter across all categories
   const filteredCatalog = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return EQUIPMENT_CATALOG;
+    if (!q) return catalog;
     const out = {};
-    Object.entries(EQUIPMENT_CATALOG).forEach(([cat, items]) => {
+    Object.entries(catalog).forEach(([cat, items]) => {
       const hits = items.filter(
         (it) =>
           it.label.toLowerCase().includes(q) ||
@@ -45,17 +72,19 @@ const EquipmentSelector = ({ draft, setAttachedDocs, panel, inverter }) => {
       if (hits.length) out[cat] = hits;
     });
     return out;
-  }, [filter]);
+  }, [catalog, filter]);
+
+  if (!config || !saveConfig) return null;
 
   return (
-    <div className="card p-6">
+    <div className="mt-10 border-t border-cream-200 pt-8">
       <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
         <div>
           <h3 className="font-heading text-base font-semibold text-navy-dark flex items-center gap-2">
             <Paperclip className="w-4 h-4 text-gold-primary" /> Attach Datasheets
           </h3>
           <p className="text-xs text-cream-600 mt-1">
-            Selected PDFs are merged into the final proposal after the quotation pages.
+            Selected PDFs are merged into the final proposal. Use Manage catalog to add or remove datasheets.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -74,6 +103,14 @@ const EquipmentSelector = ({ draft, setAttachedDocs, panel, inverter }) => {
         </div>
       </div>
 
+      <EquipmentCatalogManager
+        config={config}
+        saveConfig={saveConfig}
+        showToast={showToast}
+        equipmentIndex={equipmentIndex}
+        onRemovedPath={(path) => setAttachedDocs(selected.filter((p) => p !== path))}
+      />
+
       {/* Search */}
       <input
         type="text"
@@ -91,7 +128,7 @@ const EquipmentSelector = ({ draft, setAttachedDocs, panel, inverter }) => {
           </div>
           <div className="flex flex-wrap gap-2">
             {selected.map((path) => {
-              const meta = EQUIPMENT_INDEX[path];
+              const meta = equipmentIndex[path];
               return (
                 <span
                   key={path}
@@ -137,23 +174,35 @@ const EquipmentSelector = ({ draft, setAttachedDocs, panel, inverter }) => {
                   {items.map((it) => {
                     const isSelected = selected.includes(it.path);
                     return (
-                      <label
+                      <div
                         key={it.path}
-                        className={`flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-cream-50 ${
+                        className={`flex items-center gap-2 px-3 py-2 text-sm hover:bg-cream-50 ${
                           isSelected ? 'bg-gold-light/10' : ''
                         }`}
                       >
-                        <input
-                          type="checkbox"
-                          className="w-4 h-4 accent-gold-primary"
-                          checked={isSelected}
-                          onChange={() => toggle(it.path)}
-                        />
-                        <span className="flex-1 text-navy-dark">{it.label}</span>
-                        {it.brand && (
-                          <span className="text-xs text-cream-600">{it.brand}</span>
+                        <label className="flex flex-1 items-center gap-2.5 cursor-pointer min-w-0">
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 accent-gold-primary shrink-0"
+                            checked={isSelected}
+                            onChange={() => toggle(it.path)}
+                          />
+                          <span className="flex-1 text-navy-dark truncate">{it.label}</span>
+                          {it.brand && (
+                            <span className="text-xs text-cream-600 shrink-0">{it.brand}</span>
+                          )}
+                        </label>
+                        {!isCustomPath(it.path) && (
+                          <button
+                            type="button"
+                            title="Hide from catalog"
+                            className="text-rose-600 hover:text-rose-800 shrink-0"
+                            onClick={() => hideBuiltIn(it.path)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         )}
-                      </label>
+                      </div>
                     );
                   })}
                 </div>

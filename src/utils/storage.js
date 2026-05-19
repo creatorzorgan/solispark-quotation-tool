@@ -52,6 +52,12 @@ export const getConfig = () => {
         ...(stored.pricing_defaults?.inverters || {}),
       },
     },
+    equipment_catalog: {
+      ...DEFAULT_CONFIG.equipment_catalog,
+      ...(stored.equipment_catalog || {}),
+      hidden: stored.equipment_catalog?.hidden ?? DEFAULT_CONFIG.equipment_catalog.hidden,
+      custom: stored.equipment_catalog?.custom ?? DEFAULT_CONFIG.equipment_catalog.custom,
+    },
   };
 };
 export const saveConfig = (config) => writeJSON(K_CONFIG, config);

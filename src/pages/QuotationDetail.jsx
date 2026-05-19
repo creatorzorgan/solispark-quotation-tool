@@ -22,7 +22,7 @@ const Row = ({ label, value }) => (
 const QuotationDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { quotations, deleteQuotation, duplicateQuotation, saveQuotation, showToast, config } = useApp();
+  const { quotations, deleteQuotation, duplicateQuotation, saveQuotation, showToast, config, saveConfig } = useApp();
   const q = quotations.find((x) => x.id === id);
 
   const computed = useMemo(() => {
@@ -261,6 +261,9 @@ const QuotationDetail = () => {
             setAttachedDocs={setAttachedDocs}
             panel={panel}
             inverter={config.pricing_defaults.inverters[s.inverterKey]}
+            config={config}
+            saveConfig={saveConfig}
+            showToast={showToast}
           />
         </div>
 

@@ -3,7 +3,6 @@ import { formatINR, formatKw } from '../../utils/format.js';
 import { Download, FileText, Save, Send } from 'lucide-react';
 import { generatePdf } from '../../utils/pdfGenerator.js';
 import { generateDocx } from '../../utils/docxGenerator.js';
-import EquipmentSelector from '../../components/EquipmentSelector.jsx';
 
 const Row = ({ label, value }) => (
   <div className="flex justify-between py-2 border-b border-cream-100 last:border-0 text-sm">
@@ -12,7 +11,7 @@ const Row = ({ label, value }) => (
   </div>
 );
 
-const Step6Preview = ({ draft, computed, config, setAttachedDocs, onFinalize }) => {
+const Step6Preview = ({ draft, computed, config, onFinalize }) => {
   if (!computed) {
     return (
       <div className="text-center text-cream-600 py-12">
@@ -24,8 +23,6 @@ const Step6Preview = ({ draft, computed, config, setAttachedDocs, onFinalize }) 
   const c = draft.client;
   const s = draft.system;
   const e = draft.energy;
-  const panel = config.pricing_defaults.panels[s.panelKey];
-  const inverter = config.pricing_defaults.inverters[s.inverterKey];
 
   const handleDownload = async () => {
     await generatePdf({ quotation: draft, computed, config });
@@ -91,15 +88,6 @@ const Step6Preview = ({ draft, computed, config, setAttachedDocs, onFinalize }) 
             <div className="flex justify-between"><span>25-yr ROI</span><span className="font-bold text-gold-light">{roi.roiPercent}%</span></div>
           </div>
         </div>
-      </div>
-
-      <div className="mt-6">
-        <EquipmentSelector
-          draft={draft}
-          setAttachedDocs={setAttachedDocs}
-          panel={panel}
-          inverter={inverter}
-        />
       </div>
 
       <div className="mt-8 flex flex-wrap gap-3 justify-end">

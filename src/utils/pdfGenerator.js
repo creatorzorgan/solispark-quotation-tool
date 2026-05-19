@@ -286,14 +286,24 @@ async function stampLetterheadInto(finalDoc, contentBytes) {
 // Fetch selected datasheet PDFs and append to the final doc (no letterhead).
 async function appendDatasheets(finalDoc, paths) {
   if (!paths || !paths.length) return;
+  const { isBlobPath, getEquipmentBlobBytes } = await import('./equipmentBlobStore.js');
   for (const path of paths) {
     try {
-      const res = await fetch(path);
-      if (!res.ok) {
-        console.warn('[pdf] datasheet fetch failed:', path, res.status);
-        continue;
+      let bytes;
+      if (isBlobPath(path)) {
+        bytes = await getEquipmentBlobBytes(path);
+        if (!bytes) {
+          console.warn('[pdf] datasheet blob missing:', path);
+          continue;
+        }
+      } else {
+        const res = await fetch(encodeURI(path));
+        if (!res.ok) {
+          console.warn('[pdf] datasheet fetch failed:', path, res.status);
+          continue;
+        }
+        bytes = await res.arrayBuffer();
       }
-      const bytes = await res.arrayBuffer();
       const srcDoc = await PDFDocument.load(bytes, { ignoreEncryption: true });
       const copied = await finalDoc.copyPages(srcDoc, srcDoc.getPageIndices());
       copied.forEach((p) => finalDoc.addPage(p));
