@@ -25,6 +25,7 @@ const WHITE = [255, 255, 255];
 const OFF_WHITE = [248, 246, 241];
 const GRAY = [107, 101, 96];
 const LIGHT_GRAY = [240, 237, 232];
+const LIGHT_GREEN = [220, 245, 220];
 
 const PW = 210; // A4 width mm
 const PH = 297; // A4 height mm
@@ -782,6 +783,9 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
   const systemPrice = computed?.systemPrice ?? 0;
   const discomFee = computed?.discomCharges ?? 0;
   const basicPrice = systemPrice + discomFee;
+  const gstRate = config.pricing_defaults.tax.gst_rate_percent;
+  const gstAmount = totals.gst ?? Math.round((basicPrice * gstRate) / 100);
+  const netPayable = basicPrice + gstAmount;
 
   doc.autoTable({
     startY: y,
@@ -806,10 +810,32 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
         {
           content: 'Total Basic Price',
           colSpan: 4,
-          styles: { fontStyle: 'bold', fillColor: GOLD, textColor: NAVY, halign: 'left' },
+          styles: { fontStyle: 'bold', halign: 'left' },
         },
         {
           content: formatNumber(basicPrice),
+          styles: { fontStyle: 'bold', halign: 'right' },
+        },
+      ],
+      [
+        {
+          content: `GST @ ${gstRate}%`,
+          colSpan: 4,
+          styles: { halign: 'left' },
+        },
+        {
+          content: formatNumber(gstAmount),
+          styles: { halign: 'right' },
+        },
+      ],
+      [
+        {
+          content: 'Total Net Payable Amount',
+          colSpan: 4,
+          styles: { fontStyle: 'bold', fillColor: GOLD, textColor: NAVY, halign: 'left' },
+        },
+        {
+          content: formatNumber(netPayable),
           styles: { fontStyle: 'bold', halign: 'right', fillColor: GOLD, textColor: NAVY },
         },
       ],
@@ -845,15 +871,14 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
     );
     y += 4;
 
-    // Compute effective price for the DCR row exactly like the reference PDF:
-    //   Total Effective Price = (Basic Price) - (Government Subsidy)
+    // Total Effective Price = Total Net Payable − Government Subsidy
     const effectiveSubsidy = computed?.subsidy || 0;
-    const effectivePrice = Math.max(0, basicPrice - effectiveSubsidy);
+    const effectivePrice = Math.max(0, netPayable - effectiveSubsidy);
     const panelMakeUpper = String(panel.brand || '').toUpperCase() || 'ADANI';
     const panelWp = panel.wattage || s.panelWattage;
     const dcrRowLabel = `For ${panelMakeUpper} ${panelWp}Wp DCR N type TopCon`;
     const dcrRowValue = effectiveSubsidy > 0
-      ? `Rs. ${formatNumber(basicPrice)} - Rs. ${formatNumber(effectiveSubsidy)} (Subsidy) = Rs. ${formatNumber(effectivePrice)}`
+      ? `Rs. ${formatNumber(netPayable)} - Rs. ${formatNumber(effectiveSubsidy)} (Subsidy) = Rs. ${formatNumber(effectivePrice)}`
       : `Rs. ${formatNumber(effectivePrice)}`;
 
     doc.autoTable({
@@ -861,12 +886,18 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
       margin: { left: M, right: M },
       head: [
         [{ content: 'PRICE FOR SRTPV UNDER PM SURYA GHAR YOGANA (DCR PANELS)', colSpan: 2, styles: { halign: 'center' } }],
-        ['', { content: 'Total Effective Price', styles: { halign: 'left', fillColor: WHITE, textColor: NAVY } }],
+        [
+          { content: 'System Description', styles: { halign: 'left', textColor: NAVY } },
+          { content: 'Total Effective Price', styles: { halign: 'left', textColor: NAVY } },
+        ],
       ],
       body: [
         [
           { content: dcrRowLabel, styles: { fontStyle: 'bold' } },
-          { content: dcrRowValue, styles: { fontStyle: 'bold' } },
+          {
+            content: dcrRowValue,
+            styles: { fontStyle: 'bold', fillColor: LIGHT_GREEN, textColor: NAVY },
+          },
         ],
       ],
       headStyles: { fillColor: GOLD, textColor: NAVY, fontSize: 10, fontStyle: 'bold' },
@@ -881,34 +912,6 @@ export const generatePdf = async ({ quotation: q, computed, config }) => {
     y = doc.lastAutoTable.finalY + 8;
   }
 
-  // Subsidy / GST / Grand total summary. With the new PM Surya Ghar block
-  // above, the commercial offer can spill close to the footer — guard the
-  // totals so they always land cleanly on the same page they belong to.
-  if (y > BOTTOM - 40) {
-    doc.addPage();
-    y = TOP + 4;
-  }
-  leftText(doc, `GST @ ${config.pricing_defaults.tax.gst_rate_percent}%`, M + CW / 2 - 40, y, 10, GRAY);
-  rightText(doc, formatRs(totals.gst), PW - M, y, 11, NAVY, 'bold');
-  y += 7;
-  if ((totals.appliedSubsidy || 0) > 0) {
-    leftText(doc, 'Grand Total (Before Subsidy)', M + CW / 2 - 40, y, 10, GRAY);
-    rightText(doc, formatRs(totals.grandTotal), PW - M, y, 11, NAVY, 'bold');
-    y += 7;
-    leftText(doc, 'Less: Govt. Subsidy (PM Surya Ghar Muft Bijli Yojana)', M + CW / 2 - 40, y, 10, GRAY);
-    rightText(doc, `- ${formatRs(totals.appliedSubsidy)}`, PW - M, y, 11, NAVY, 'bold');
-    y += 5;
-    goldLine(doc, y);
-    y += 10;
-    leftText(doc, 'NET EFFECTIVE PRICE', M + CW / 2 - 40, y, 14, NAVY, 'bold');
-    rightText(doc, formatRs(totals.netEffectivePrice), PW - M, y, 16, GOLD_DARK, 'bold');
-  } else {
-    y += 2;
-    goldLine(doc, y);
-    y += 10;
-    leftText(doc, 'GRAND TOTAL', M + CW / 2 - 40, y, 14, NAVY, 'bold');
-    rightText(doc, formatRs(totals.grandTotal), PW - M, y, 16, GOLD_DARK, 'bold');
-  }
   endSection('commercial');
 
   // ── SECTION: ROI & Savings ───────────────────────────────────────────────

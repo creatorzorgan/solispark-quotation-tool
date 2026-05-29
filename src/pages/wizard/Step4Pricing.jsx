@@ -229,33 +229,29 @@ const Step4Pricing = ({ draft, updatePricing, computed, config }) => {
                 <span>{formatINR(totals.subtotal)}</span>
               </div>
 
-              <div className="flex justify-between py-2 text-white/80">
+              <div className="flex justify-between py-2 text-white/80 border-b border-white/10">
                 <span>GST @ {gstPercent}%</span>
                 <span>{formatINR(totals.gst)}</span>
               </div>
 
-              {p.pmSuryaGhar && totals.appliedSubsidy > 0 ? (
+              <div className="flex justify-between py-3 border-b border-white/10 font-bold text-gold-primary">
+                <span>Total Net Payable Amount</span>
+                <span>{formatINR(totals.grandTotal)}</span>
+              </div>
+
+              {p.pmSuryaGhar && totals.appliedSubsidy > 0 && (
                 <>
-                  <div className="flex justify-between py-2 text-white/60 text-xs border-t border-white/10 mt-1">
-                    <span>Grand Total (before subsidy)</span>
-                    <span>{formatINR(totals.grandTotal)}</span>
-                  </div>
                   <div className="flex justify-between py-2 text-gold-light">
                     <span>
                       Less: Govt. Subsidy{subsidyIsOverride && <em className="not-italic opacity-70"> (manual)</em>}
                     </span>
                     <span>−{formatINR(totals.appliedSubsidy)}</span>
                   </div>
-                  <div className="flex justify-between items-center py-3 border-t border-white/10 font-heading text-gold-primary">
-                    <span className="text-lg font-bold leading-tight">Net Effective Price</span>
+                  <div className="flex justify-between items-center py-3 mt-1 rounded-md bg-emerald-100/90 text-navy-dark px-3 font-heading">
+                    <span className="text-lg font-bold leading-tight">Total Effective Price</span>
                     <span className="text-xl font-bold whitespace-nowrap">{formatINR(totals.netEffectivePrice)}</span>
                   </div>
                 </>
-              ) : (
-                <div className="flex justify-between py-3 border-t border-white/10 font-heading text-xl text-gold-primary">
-                  <span>Grand Total</span>
-                  <span>{formatINR(totals.grandTotal)}</span>
-                </div>
               )}
             </div>
           </div>

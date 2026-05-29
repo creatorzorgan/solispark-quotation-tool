@@ -35,6 +35,7 @@ const GOLD = 'F5A623';
 const GOLD_DARK = 'D4891A';
 const GRAY = '6B6560';
 const OFF_WHITE = 'F8F6F1';
+const LIGHT_GREEN = 'DCF5DC';
 const WHITE = 'FFFFFF';
 
 // ─── Small helpers for building docx nodes ──────────────────────────────────
@@ -311,10 +312,14 @@ function systemSpecs({ s, panel, inverter, computed, discomName }) {
 
 function commercialOffer({ s, panel, computed, config, discomName }) {
   const totals = computed?.totals || {};
-  // Resolved values from the computed helper — honour any manual overrides.
   const systemPrice = computed?.systemPrice ?? 0;
   const discomFee = computed?.discomCharges ?? 0;
   const basicPrice = systemPrice + discomFee;
+  const gstRate = config.pricing_defaults.tax.gst_rate_percent;
+  const gstAmount = totals.gst ?? Math.round((basicPrice * gstRate) / 100);
+  const netPayable = basicPrice + gstAmount;
+  const effectiveSubsidy = computed?.subsidy || 0;
+  const effectivePrice = Math.max(0, netPayable - effectiveSubsidy);
 
   const head = new TableRow({
     children: [
@@ -349,17 +354,72 @@ function commercialOffer({ s, panel, computed, config, discomName }) {
       children: [
         new TableCell({
           columnSpan: 4,
-          shading: { type: ShadingType.CLEAR, color: 'auto', fill: OFF_WHITE },
-          children: [new Paragraph({
-            children: [run(`Total Basic Price — for ${panel.brand || ''} ${panel.wattage || s.panelWattage}Wp ${panel.model || ''} for ${s.systemSizeKw} kW`, {
-              bold: true, color: NAVY, size: 20,
-            })],
-          })],
+          children: [new Paragraph({ children: [run('Total Basic Price', { bold: true, color: NAVY, size: 20 })] })],
         }),
-        cell(formatNumber(basicPrice), { bold: true, alignment: AlignmentType.RIGHT, fill: OFF_WHITE }),
+        cell(formatNumber(basicPrice), { bold: true, alignment: AlignmentType.RIGHT }),
+      ],
+    }),
+    new TableRow({
+      children: [
+        new TableCell({
+          columnSpan: 4,
+          children: [new Paragraph({ children: [run(`GST @ ${gstRate}%`, { color: NAVY, size: 20 })] })],
+        }),
+        cell(formatNumber(gstAmount), { alignment: AlignmentType.RIGHT }),
+      ],
+    }),
+    new TableRow({
+      children: [
+        new TableCell({
+          columnSpan: 4,
+          shading: { type: ShadingType.CLEAR, color: 'auto', fill: GOLD },
+          children: [new Paragraph({ children: [run('Total Net Payable Amount', { bold: true, color: NAVY, size: 20 })] })],
+        }),
+        cell(formatNumber(netPayable), { bold: true, alignment: AlignmentType.RIGHT, fill: GOLD }),
       ],
     }),
   ];
+
+  const panelMakeUpper = String(panel.brand || '').toUpperCase() || 'ADANI';
+  const panelWp = panel.wattage || s.panelWattage;
+  const dcrRowLabel = `For ${panelMakeUpper} ${panelWp}Wp DCR N type TopCon`;
+  const dcrRowValue = effectiveSubsidy > 0
+    ? `Rs. ${formatNumber(netPayable)} - Rs. ${formatNumber(effectiveSubsidy)} (Subsidy) = Rs. ${formatNumber(effectivePrice)}`
+    : `Rs. ${formatNumber(effectivePrice)}`;
+
+  const dcrTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            columnSpan: 2,
+            children: [
+              new Paragraph({
+                children: [run('PRICE FOR SRTPV UNDER PM SURYA GHAR YOGANA (DCR PANELS)', {
+                  bold: true, color: NAVY, size: 22,
+                })],
+                alignment: AlignmentType.CENTER,
+              }),
+            ],
+            shading: { type: ShadingType.CLEAR, color: 'auto', fill: GOLD },
+          }),
+        ],
+      }),
+      new TableRow({
+        children: [
+          cell('System Description', { bold: true }),
+          cell('Total Effective Price', { bold: true }),
+        ],
+      }),
+      new TableRow({
+        children: [
+          cell(dcrRowLabel, { bold: true }),
+          cell(dcrRowValue, { bold: true, fill: LIGHT_GREEN }),
+        ],
+      }),
+    ],
+  });
 
   const out = [
     h1('Commercial Offer'),
@@ -372,39 +432,17 @@ function commercialOffer({ s, panel, computed, config, discomName }) {
       rows: [head, ...rows],
     }),
     emptyLine(),
+    txt('NOTE: PM SURYA GHAR YOJANA solar subsidy program implies agreement to the following terms:', {
+      bold: true, size: 20,
+    }),
+    body(
+      'Subsidies are fixed at Rs. 30,000 for 1kW systems, Rs. 60,000 for 2kW systems, and Rs. 78,000 for 3kW and above, valid up to 10kW systems and could vary depending on the time of application. Eligibility is subject to adherence to program guidelines. Any misinformation provided may result in disqualification. Participants are responsible for any additional costs incurred beyond the subsidized amount.',
+      { size: 20 }
+    ),
+    emptyLine(),
+    dcrTable,
+    pageBreak(),
   ];
-
-  if ((totals.appliedSubsidy || 0) > 0) {
-    out.push(simpleTwoColTable([
-      [`GST @ ${config.pricing_defaults.tax.gst_rate_percent}%`, formatRs(totals.gst)],
-      ['Grand Total (Before Subsidy)', formatRs(totals.grandTotal)],
-      ['Less: Govt. Subsidy (PM Surya Ghar Muft Bijli Yojana)', `- ${formatRs(totals.appliedSubsidy)}`],
-    ]));
-  } else {
-    out.push(simpleTwoColTable([
-      [`GST @ ${config.pricing_defaults.tax.gst_rate_percent}%`, formatRs(totals.gst)],
-    ]));
-  }
-
-  out.push(emptyLine());
-  out.push(new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    rows: [
-      new TableRow({
-        children: [
-          cell(
-            (totals.appliedSubsidy || 0) > 0 ? 'NET EFFECTIVE PRICE' : 'GRAND TOTAL',
-            { bold: true, size: 26, fill: NAVY, color: WHITE, width: 60 }
-          ),
-          cell(formatRs(totals.netEffectivePrice || totals.grandTotal), {
-            bold: true, size: 30, color: GOLD, fill: NAVY,
-            alignment: AlignmentType.RIGHT, width: 40,
-          }),
-        ],
-      }),
-    ],
-  }));
-  out.push(pageBreak());
   return out;
 }
 
